@@ -32,6 +32,7 @@ The script will create a new folder with following subdirectories:
 3. features - peak picking results resulted from feature finding section
 4. curated library - the curated libraries
 5. figures - saved figures (if any)
+
 It will also print out the full directory to your workspace. Please use it in the following section.
 * Standard list preparation
 The standard list mainly composes of 3 columns: name, inchikey, and mix label (the file names of the spectra).
