@@ -24,7 +24,7 @@ There are three main moudules in this pipeline: standard list preparation, featu
 A workspace is just a folder for all of the files you will need for your library curation process. 
 You can run the following code to create a workspace and put corresponding files in:
 ```
-python setup_workspace.py [the_director_of_your_workspace]
+python setup_workspace.py [the_place_you_want_the_workspace_in] [your_library_name]
 ```
 The script will create a new folder with following subdirectories:
 * standard_list - the standard list you provided, as well as curated standard list by Standard list preparation section
@@ -33,7 +33,7 @@ The script will create a new folder with following subdirectories:
 * curated library - the curated libraries
 * figures - saved figures (if any)
 
-It will also print out the full directory to your workspace. Please use it in the following section.
+It will  print out the full directory to your workspace [the_director_of_your_workspace]. Please use it in the following section.
 #### Standard list preparation
 The standard list mainly composes of 3 columns: name, inchikey, and mix label (the file names of the spectra).
 Please refer to the sample standard list in the sample_data folder, and please do not change the column name.
