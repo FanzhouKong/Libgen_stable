@@ -47,13 +47,14 @@ def precursor_matching_dataframe(features_all, std_list_all, if_clean = True):
     return(matched)
 
 def find_adduct_columns(columns, adducts = None):
-    from toolsets.std_list_prep import all_adduct_pos, all_adduct_neg
+    from toolsets.constants import single_charged_adduct_mass
+    # from toolsets.std_list_prep import all_adduct_pos, all_adduct_neg
     if adducts == None:
         adducts = []
     else:
         adducts = adducts
     for col in columns:
-        if col in all_adduct_neg or col in all_adduct_pos:
+        if col in single_charged_adduct_mass.keys():
             adducts.append(col)
     return(adducts)
 def _precursor_matching_mix(std_list_mix, features, step = 0.005):

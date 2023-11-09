@@ -20,8 +20,9 @@ def quick_search_sorted(data, column_name,value, step, ifsorted = True):
     index_start = np.searchsorted(data[column_name], value_start,side = 'left')
     index_end = np.searchsorted(data[column_name], value_end,side = 'right')
     return(data.iloc[index_start:index_end])
-def quick_search_values(data, column_name,value_start, value_end, ifsorted = True):
+def quick_search_values(data_raw, column_name,value_start, value_end, ifsorted = True):
     # data.sort_values(by=column_name, inplace = True)
+    data = data_raw.copy()
     if ifsorted == False:
         data.sort_values(by=column_name, inplace = True)
     index_start = np.searchsorted(data[column_name], value_start,side = 'left')

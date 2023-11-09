@@ -11,11 +11,12 @@ from toolsets.search import string_search
 # from rdkit.Chem.Descriptors import ExactMolWt
 from rdkit import RDLogger
 RDLogger.DisableLog('rdApp.*')
-from toolsets.API_gets import pubchem_get
+from toolsets.API_gets import inchi_to_smiles
+
 def std_list_cleanup(std_list_nt, name_column = 'name'):
     std_list = { 'name': std_list_nt[name_column],
              # 'abb':std_list_nt['abbreviated'],
-            'inchikey': std_list_nt['uncharged_inchikey'],
+            # 'inchikey': std_list_nt['uncharged_inchikey'],
             'mix':std_list_nt['mix'],
                  'smiles':std_list_nt['uncharged_smiles'],
                  'formula':std_list_nt['uncharged_formula'],
@@ -26,33 +27,33 @@ def std_list_cleanup(std_list_nt, name_column = 'name'):
                  }
     std_list = pd.DataFrame(std_list)
     return(std_list)
-def get_info_from_db(std_list, inchikey_column = 'inchikey'):
-    smiles = []
-    std_list.dropna(axis=0, subset='inchikey', inplace=True)
-    for index, row in tqdm(std_list.iterrows(), total=len(std_list)):
-        try:
-            smiles.append(pubchem_get(content= row[inchikey_column]))
-        except:
-            smiles.append(np.NAN)
-    std_list['smiles_fetched']=smiles
-    # return(std_list)
-    # std_list.dropna(axis = 1, subset=['smiles_fetched'], inplace = True)
-    formal_charges = []
-    formula_fetched=[]
-    for index, row in std_list.iterrows():
-        try:
-            mol = Chem.MolFromSmiles(row['smiles_fetched'])
-            formula_fetched.append(CalcMolFormula(mol))
-            formal_charges.append(Chem.GetFormalCharge(mol))
-        except:
-            formula_fetched.append(np.NAN)
-            formal_charges.append(np.NAN)
-
-    std_list['formal_charges']=formal_charges
-    std_list['formula_fetched']=formula_fetched
-    std_list.dropna(axis=0, subset='smiles_fetched', inplace=True)
-    std_list.reset_index(inplace=True, drop=True)
-    return (std_list)
+# def get_info_from_db(std_list, inchikey_column = 'inchikey'):
+#     smiles = []
+#     std_list.dropna(axis=0, subset='inchikey', inplace=True)
+#     for index, row in tqdm(std_list.iterrows(), total=len(std_list)):
+#         try:
+#             smiles.append(pubchem_get(content= row[inchikey_column]))
+#         except:
+#             smiles.append(np.NAN)
+#     std_list['smiles_fetched']=smiles
+#     # return(std_list)
+#     # std_list.dropna(axis = 1, subset=['smiles_fetched'], inplace = True)
+#     formal_charges = []
+#     formula_fetched=[]
+#     for index, row in std_list.iterrows():
+#         try:
+#             mol = Chem.MolFromSmiles(row['smiles_fetched'])
+#             formula_fetched.append(CalcMolFormula(mol))
+#             formal_charges.append(Chem.GetFormalCharge(mol))
+#         except:
+#             formula_fetched.append(np.NAN)
+#             formal_charges.append(np.NAN)
+#
+#     std_list['formal_charges']=formal_charges
+#     std_list['formula_fetched']=formula_fetched
+#     std_list.dropna(axis=0, subset='smiles_fetched', inplace=True)
+#     std_list.reset_index(inplace=True, drop=True)
+#     return (std_list)
 
 
 
@@ -70,8 +71,11 @@ def check_mol(smile):
         mol_ = smile
         return(mol_)
     else:
-        mol_ = Chem.MolFromSmiles(smile)
-        return(mol_)
+        try:
+            mol_ = Chem.MolFromSmiles(smile)
+            return(mol_)
+        except:
+            return(np.NAN)
 def cal_formal_charge(smile):
     mol_ = check_mol(smile)
     return (Chem.GetFormalCharge(mol_))
@@ -95,7 +99,8 @@ def neutrilize_salt(smile, salts_smart, return_stripped = False):
         return(Chem.MolToSmiles(mol_uncharged))
 
 
-def neutrilize_salt_df(salt_df, salts_smart, smile_column = 'smiles_fetched'):
+def neutrilize_salt_df(salt_df_input, salts_smart='[Na+,K+,Cl-,HCl,HBr]', smile_column = 'smiles_fetched'):
+    salt_df = salt_df_input.copy()
     salt_df.columns= salt_df.columns.str.lower()
     uncharged_result = {}
     for head in ['stripped','uncharged']:
@@ -120,7 +125,7 @@ def neutrilize_salt_df(salt_df, salts_smart, smile_column = 'smiles_fetched'):
                 uncharged_result[tail].append(ExactMolWt(mol_uncharged))
     for i in uncharged_result.keys():
         salt_df[i]=uncharged_result[i]
-    salt_df = recalculate_inchikey(salt_df)
+    # salt_df = recalculate_inchikey(salt_df)
 
     return(salt_df)
 
@@ -135,7 +140,23 @@ def recalculate_inchikey(std_list):
     std_list['uncharged_inchikey']=uncharged_inchikey
     return(std_list)
 
+def complete_smiles(data, name_column, if_na = False):
 
+    std_list_all = data.copy()
+    names_unique = std_list_all[name_column].unique()
+    from toolsets.API_gets import name_to_smiles
+    smiles_unique = []
+    for name in tqdm(names_unique):
+        smiles_unique.append(name_to_smiles(name))
+    smiles = []
+    for index, row in std_list_all.iterrows():
+        idx = list(names_unique).index(row[name_column])
+        smiles.append(smiles_unique[idx])
+    std_list_all['smiles']=smiles
+    if if_na ==False:
+        std_list_all.dropna(subset=['smiles'], inplace=True)
+
+    return std_list_all
 def complete_formal_charge(data, smiles_column = 'smiles'):
     fcs = []
     for index, row in data.iterrows():
@@ -145,6 +166,36 @@ def complete_formal_charge(data, smiles_column = 'smiles'):
         except:
             formulas.append(np.NaN)
     data['formal_charges']=fcs
+    return (data)
+# def complete_guess_adduct(std_list):
+#     data = std_list.copy()
+#     guessed_adduct = []
+#     mz_offset = []
+#     for index, row in std_list_neg.iterrows():
+#         guessed_result = guess_adduct(float(row['Precurzor (m/z)']), row['Exact Mass (u)'], '-')
+#         guessed_adduct.append(guessed_result[0])
+#         mz_offset.append(guessed_result[1])
+
+def guess_adduct(precursor,mono_mass, mode):
+    adduct_list = []
+    mass_list = []
+    for key in single_charged_adduct_mass.keys():
+        if key[-1]== mode:
+            adduct_list.append(key)
+            mass_list.append(single_charged_adduct_mass[key])
+    mass_offset = [abs(mono_mass+x-precursor) for x in mass_list]
+    idx = np.argmin(mass_offset)
+    return(adduct_list[idx], mass_offset[idx])
+def complete_mono_mass(std_list, smiles_column = 'smiles', position = 2):
+    data = std_list.copy()
+    mono_mass = []
+    for index, row in data.iterrows():
+        try:
+            mol_temp = Chem.MolFromSmiles(row[smiles_column])
+            mono_mass.append(ExactMolWt(mol_temp))
+        except:
+            mono_mass.append(np.NaN)
+    data.insert(position, "mono_mass", mono_mass)
     return (data)
 def complete_formula(data, smiles_column = 'smiles'):
     formulas = []
@@ -156,54 +207,81 @@ def complete_formula(data, smiles_column = 'smiles'):
             formulas.append(np.NaN)
     data.insert(2, "Formula_fetched", formulas)
     return (data)
+def get_adduct_cols(cols):
+    adduct_cols = [x for x in cols if x in single_charged_adduct_mass.keys()]
+    return(adduct_cols)
 
 
-
-all_adduct_pos = ['[M]+','[M+H]+', '[M+Na]+', '[M+NH4]+', '[M-H2O+H]+']
-all_adduct_neg = ['[M]-','[M-H]-','[M+C2H4O2-H]-','[M-H2O-H]-','[M+FA-H]-','[M+Cl]-','[M+Na-2H]-']
+# all_adduct_pos = ['[M]+','[M+H]+', '[M+Na]+', '[M+NH4]+', '[M-H2O+H]+']
+# all_adduct_neg = ['[M]-','[M-H]-','[M+C2H4O2-H]-','[M-H2O-H]-','[M+FA-H]-','[M+Cl]-','[M+Na-2H]-']
+from toolsets.constants import single_charged_adduct_mass
 def calculate_precursormz(smiles, adduct):
     mol_ = check_mol(smiles)
-    proton = 1.00727646677
-    Na_plus = 22.989218
-    NH4_plus = 18.033823
-    HacH_minus = 59.013851
-    H2OH_minus = -19.01839
-    FaH_minus = 44.998201
-    Cl_minus = 34.969402
-    if cal_formal_charge(mol_)==0:
-        if(adduct=='[M+NH4]+'):
-            pmz = ExactMolWt(mol_)+NH4_plus
-        elif (adduct=='[M+H]+'):
-            pmz = ExactMolWt(mol_)+proton
-        elif (adduct=='[M+Na]+'):
-            pmz = ExactMolWt(mol_)+Na_plus
-        elif (adduct=='[M-H2O+H]+'):
-            pmz = ExactMolWt(mol_)-ExactMolWt(Chem.MolFromSmiles('O'))+proton
-        elif (adduct=='[M-H]-'):
-            pmz = ExactMolWt(mol_)-proton
-        elif (adduct=='[M+C2H4O2-H]-'):
-            pmz = ExactMolWt(mol_)+HacH_minus
-        elif (adduct=='[M-H2O-H]-'):
-            pmz = ExactMolWt(mol_)+H2OH_minus
-        elif (adduct=='[M+FA-H]-'):
-            pmz = ExactMolWt(mol_)+FaH_minus
-        elif (adduct=='[M+Cl]-'):
-            pmz = ExactMolWt(mol_)+Cl_minus
-        elif (adduct=='[M+Na-2H]-'):
-            pmz = ExactMolWt(mol_)+20.974666
-        else:
-            pmz = 0
-    elif cal_formal_charge(mol_)==1:
-        if(adduct =='[M]+'):
-            pmz = ExactMolWt(mol_)
-        else:
-            pmz = 0
-    elif cal_formal_charge(mol_)==-1:
-        if(adduct =='[M]-'):
-            pmz = ExactMolWt(mol_)
-        else:
-            pmz = 0
+    mono_mass =ExactMolWt(mol_)
+    if adduct in single_charged_adduct_mass.keys():
+        if cal_formal_charge(mol_)==0:
+            if adduct in single_charged_adduct_mass.keys():
+                pmz = mono_mass+single_charged_adduct_mass[adduct]
+            else:
+                pmz = 0
+        elif cal_formal_charge(mol_)==1:
+            if adduct == '[M]+':
+                pmz = mono_mass
+            else:
+                pmz = 0
+        elif cal_formal_charge(mol_)==-1:
+            if adduct == '[M]-':
+                pmz = mono_mass
+            else:
+                pmz = 0
     else:
-        print("you have passed a molecule with multiple charges")
+        # print(f'the adduct {adduct} you have entered is not a legit adduct')
         return(np.NAN)
-    return(round(pmz,7))
+    return(np.round(pmz,7))
+
+    # proton = 1.00727646677
+    # Na_plus = 22.989218
+    # NH4_plus = 18.033823
+    # HacH_minus = 59.013851
+    # H2OH_minus = -19.01839
+    # FaH_minus = 44.998201
+    # Cl_minus = 34.969402
+    # if cal_formal_charge(mol_)==0:
+    #     if(adduct=='[M+NH4]+'):
+    #         pmz = ExactMolWt(mol_)+NH4_plus
+    #     elif (adduct=='[M+H]+'):
+    #         pmz = ExactMolWt(mol_)+proton
+    #     elif (adduct=='[M+Na]+'):
+    #         pmz = ExactMolWt(mol_)+Na_plus
+    #     elif (adduct == '[M+K]+'):
+    #         pmz = ExactMolWt(mol_)+single_charged_adduct_mass[adduct]
+    #     elif (adduct=='[M-H2O+H]+'):
+    #         pmz = ExactMolWt(mol_)-ExactMolWt(Chem.MolFromSmiles('O'))+proton
+    #     elif (adduct=='[M-H]-'):
+    #         pmz = ExactMolWt(mol_)-proton
+    #     elif (adduct=='[M+C2H4O2-H]-'):
+    #         pmz = ExactMolWt(mol_)+HacH_minus
+    #     elif (adduct=='[M-H2O-H]-'):
+    #         pmz = ExactMolWt(mol_)+H2OH_minus
+    #     elif (adduct=='[M+FA-H]-'):
+    #         pmz = ExactMolWt(mol_)+FaH_minus
+    #     elif (adduct=='[M+Cl]-'):
+    #         pmz = ExactMolWt(mol_)+Cl_minus
+    #     elif (adduct=='[M+Na-2H]-'):
+    #         pmz = ExactMolWt(mol_)+20.974666
+    #     else:
+    #         pmz = 0
+    # elif cal_formal_charge(mol_)==1:
+    #     if(adduct =='[M]+'):
+    #         pmz = ExactMolWt(mol_)
+    #     else:
+    #         pmz = 0
+    # elif cal_formal_charge(mol_)==-1:
+    #     if(adduct =='[M]-'):
+    #         pmz = ExactMolWt(mol_)
+    #     else:
+    #         pmz = 0
+    # else:
+    #     print("you have passed a molecule with multiple charges")
+    #     return(np.NAN)
+

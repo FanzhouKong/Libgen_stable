@@ -12,7 +12,6 @@ import os
 import toolsets.spectra_operations as so
 from toolsets.search import string_search, quick_search_values, num_search
 import toolsets.helpers as helpers
-import findpeaks as fp
 import toolsets.file_io as io
 from itertools import repeat
 import pymzml
@@ -20,7 +19,6 @@ from scipy.signal import find_peaks
 import toolsets.parallel_functions as pf
 # from toolsets.parallel_functions import _extract_mzml_info
 from multiprocessing import Pool, freeze_support
-np.warnings.filterwarnings('ignore', category=np.VisibleDeprecationWarning)
 import contextlib
 import concurrent.futures
 from matplotlib import rcParams
@@ -41,7 +39,8 @@ def feature_finding(ms1, ms2):
     features = pd.DataFrame()
     for result in results:
         features = pd.concat([features, result], ignore_index=True)
-    features.drop_duplicates(subset=['ms2_range_idx'], inplace=True)
+    features.sort_values(by = 'rt_offset', ascending=True, inplace=True)
+    features.drop_duplicates(subset=['ms2_range_idx'], keep = 'first',inplace=True, )
     features.reset_index(inplace=True, drop=True)
     return(features)
     # for feature
@@ -89,8 +88,10 @@ def get_feature(ms2,current_pmz_bin,ms1):
         for rt in features_all['rt'].unique():
             feature_rt = string_search(features_all, 'rt', rt)
             feature_rt.sort_values(by = 'rt_offset', inplace= True, ignore_index=True, ascending=True)
-            features_tidy= features_tidy.append(feature_rt.iloc[0])
+            # features_tidy= features_tidy.append(feature_rt.iloc[0])
+            features_tidy = pd.concat([features_tidy,pd.DataFrame([feature_rt.iloc[0]])], axis =0)
         features_tidy.reset_index(inplace=True, drop=True)
+
         return(features_tidy)
     else:
         return(features_all)
@@ -121,19 +122,22 @@ def connect_peaks(peak_list, target_peak_idx, intensity_list, rt_list):
           break
     # apex_peak[1]=np.argmax(intensity_list[apex_peak[0]:apex_peak[2]])+apex_peak[0]
     return(tuple(apex_peak))
-def process_mzml(mzml_path, parent_dir =  None, rt_max = 5,if_mix = True, with_ms1 = True):
+def process_mzml(mzml_path, parent_dir =  None, rt_max = 20,if_mix = False, with_ms1 = True):
+
     if if_mix == True and parent_dir != None:
         mix = mzml_path
         mzml_base_name = helpers.find_files(parent_dir, mix)
         mzml_path = os.path.join(parent_dir, mzml_base_name)
-    if if_mix == False and parent_dir!= None:
+    if if_mix == False and parent_dir is not None:
         mzml_path = os.path.join(parent_dir,mzml_path)
-        # print(mzml_path)
-        # print('i finished loading mzml file')
-    try:
-        ms1_2 = load_mzml_data(mzml_path, rt_max = rt_max)
-    except:
-        print('the mzml file or mix name you passed might be wrong')
+    if mzml_path[-5:]!='.mzml':
+        mzml_path = mzml_path+'.mzml'
+    # print(mzml_path)
+    ms1_2 = load_mzml_data(mzml_path, rt_max = rt_max)
+    # try:
+    #
+    # except:
+    #     print('the mzml file or mix name you passed might be wrong')
         # raise Error
     ms2 = string_search(ms1_2, 'ms_level', 2)
     
@@ -180,7 +184,9 @@ def process_mzml(mzml_path, parent_dir =  None, rt_max = 5,if_mix = True, with_m
         ms2['mix']= os.path.basename(mzml_path)
         ms2['base_name']=os.path.basename(mzml_path)
     ms2.sort_values(by = ['ms1_pmz', 'ms1_precursor_intensity'], inplace = True)
+    ms2 =ms2[ms2['peak_purity'] !=0]
     ms2.reset_index(inplace=True, drop=True)
+
     if with_ms1 == True:
         return(ms1, ms2)
     else:
@@ -195,7 +201,7 @@ def get_EIC_list(ms1, pmz, step = 0.005):
         rt_list.append(row['rt'])
         intensity_list.append(_extract_ms1_intensity(row['peaks'], mz_lower=pmz-step, mz_upper=pmz+step))
     return(rt_list, intensity_list)
-def auto_EIC(mix, parent_dir,pmz, vlines_location_1=[], vlines_location_2=[] , rt_start = -1, rt_end = -1, rt_max = 5):
+def auto_EIC(mix, parent_dir,pmz, vlines_location_1=[], vlines_location_2=[] , rt_start = -1, rt_end = -1, rt_max = 12):
     ms1, ms2 = process_mzml(mix, parent_dir, if_mix=True, with_ms1=True, rt_max = rt_max)
     rt_list, intensity_list = get_EIC_list(ms1, pmz)
     EIC(rt_list, intensity_list, vlines_location_1=vlines_location_1,vlines_location_2 = vlines_location_2, rt_start=rt_start, rt_end=rt_end)
@@ -285,8 +291,15 @@ def load_mzml_data(file: str, n_most_abundant=400, rt_max = 5) -> tuple:
             break
 
         to_keep = intensities > 0
-        masses = masses[to_keep]
-        intensities = intensities[to_keep]
+        # return_mass = masses
+        try:
+            masses = masses[to_keep]
+            intensities = intensities[to_keep]
+            # intensities = intensities[to_keep]
+            # masses = masses[to_keep]
+        except:
+            continue
+
         if ms_order == 1:
             cycle = cycle+1
         cycles.append(cycle)

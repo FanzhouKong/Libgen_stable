@@ -11,29 +11,52 @@ def name_to_smiles(ids):
         return r['PropertyTable']['Properties'][0]['CanonicalSMILES']
     except:
         return np.NAN
-def pubchem_get(inputt='InChIKey',outputt ='CanonicalSMILES',content=None , show_example = False):
-
+def smiles_to_name(smile):
+    try:
+        r = requests.get(f'https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/smiles/{smile}/property/IUPACName/JSON').json()
+        return r['PropertyTable']['Properties'][0]['IUPACName']
+    except:
+        return(np.NAN)
+def inchi_to_smiles(inchikey=None , show_example = False):
+    inputt='InChIKey'
+    outputt ='CanonicalSMILES'
+    full_inchi = inchikey
+    half_inchi = inchikey[0:14]
     if show_example == True:
         print("allowed inputt:InChIKey, CanonicalSMILES, IsomericSMILES, MolecularFormula, XLogP...")
         return
-    r = requests.get(f'https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/{inputt}/{content}/property/{outputt}/JSON').json()
-    if r =={'Fault': {'Code': 'PUGREST.NotFound','Message': 'No CID found','Details': ['No CID found that matches the given InChI key']}}:
-        smiles_gnps = GNPS_get(inputt = inputt.lower(), content = content, outputt = outputt[-6:].lower(),firstblock_only = False)
-        # return(smiles_gnps)
-        if pd.isnull(smiles_gnps)==True:
-            r = requests.get(f'https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/{inputt}/{content[0:14]}/property/{outputt}/JSON').json()
-            if r =={'Fault': {'Code': 'PUGREST.NotFound','Message': 'No CID found','Details': ['No CID found that matches the given InChI key']}}:
-                smiles_gnps=GNPS_get(inputt = inputt.lower(), content = content, outputt = outputt[-6:].lower(),firstblock_only = True)
-                if pd.isnull(smiles_gnps)==True:
-                    return(np.NaN)
-                else:
-                    return(smiles_gnps)
-            else:
-                return r['PropertyTable']['Properties'][0][outputt]
-        else:
-            return(smiles_gnps)
-    return r['PropertyTable']['Properties'][0][outputt]
 
+    r = requests.get(f'https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/{inputt}/{full_inchi}/property/{outputt}/JSON').json()
+    if len(r.keys())==1 and list(r.keys())[0] == 'Fault': #check if full length is not found
+        smiles_gnps=GNPS_get(inputt = inputt.lower(), content = full_inchi, outputt = outputt[-6:].lower(),firstblock_only = False)
+        # return(smiles_gnps)
+        if smiles_gnps == smiles_gnps:
+            return(smiles_gnps)
+        else:
+            r = requests.get(f'https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/{inputt}/{half_inchi}/property/{outputt}/JSON').json()
+            # return(r)
+            if len(r.keys())==1 and list(r.keys())[0] == 'Fault':
+                smiles_gnps=GNPS_get(inputt = inputt.lower(), content = full_inchi, outputt = outputt[-6:].lower(),firstblock_only = True)
+                if smiles_gnps == smiles_gnps:
+                    return smiles_gnps
+                else:
+                    return(np.NAN)
+            else:
+                neutral_one = get_neutral_one(r)
+                return(neutral_one)
+    else:# smiles found by full inchikey!
+        neutral_one = get_neutral_one(r)
+        return(neutral_one)
+def get_neutral_one(r):
+    from toolsets.std_list_prep import cal_formal_charge
+    if len(r['PropertyTable']['Properties'])>1:
+        abs_formal_charge = []
+        for t in r['PropertyTable']['Properties']:
+            abs_formal_charge.append(abs(cal_formal_charge(t['CanonicalSMILES'])))
+        return_idx = np.argmin(abs_formal_charge)
+        return(r['PropertyTable']['Properties'][return_idx]['CanonicalSMILES'])
+    else:
+        return(r['PropertyTable']['Properties'][0]['CanonicalSMILES'])
 def get_classyfire_data(dataset, classes= ['kingdom','superclass','class'],input_type='smiles'):
     kingdom=[]
     superclass=[]
@@ -138,24 +161,25 @@ def GNPS_classyfire(inputt, classes=None, input_type ='smiles'):
 
 
 def GNPS_get(content, inputt='inchikey' , outputt='smiles',firstblock_only = False):
+    from toolsets.std_list_prep import check_mol
+    try:
+        if firstblock_only == False:
+            r = requests.get('https://gnps-structure.ucsd.edu/%s?%s=%s' % (outputt, inputt, content))
+        elif inputt == 'inchikey' and firstblock_only == True:
+            # print("i am in true block")/
+            r = requests.get('https://gnps-structure.ucsd.edu/%s?%s=%s' % (outputt, inputt, content[0:14]))
+
+        if r.text != '{"message":"structure cant be identified"}\n' and 'Server Error' not in r.text:
+            return(r.text)
+        else:
+            # print("input %s not found" %inputt)
+            return(np.NaN)
+    except:
+
+        print("something going wrong with API call, returning NaN")
+        return(np.NaN)
     # print("i am in new method")
     # allowed values: inchikey, inchi, smiles
     # https://gnps-structure.ucsd.edu/smiles?inchi=<inchi string>
     # r = requests.get(f'https://gnps-structure.ucsd.edu/{outputt}?{inputt}={content}').json()
-    
-        try:
-            if firstblock_only == False:
-                r = requests.get('https://gnps-structure.ucsd.edu/%s?%s=%s' % (outputt, inputt, content))
-            elif inputt == 'inchikey' and firstblock_only == True:
-                # print("i am in true block")/
-                r = requests.get('https://gnps-structure.ucsd.edu/%s?%s=%s' % (outputt, inputt, content[0:14]))
 
-            if r.text != '{"message":"structure cant be identified"}\n':
-                return(r.text)
-            else:
-                # print("input %s not found" %inputt)
-                return(np.NaN)
-        except:
-
-            print("something going wrong with API call, returning NaN")
-            return(np.NaN)

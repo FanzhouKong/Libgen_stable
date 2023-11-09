@@ -13,21 +13,23 @@ ionized_mass = {
 }
 
 atom_mass = {
-    "H": 1.007825,
-    "C": 12.00000,
-    "N": 14.003074,
-    "O": 15.994915,
-    'F': 18.99840322,
-    'Na':22.989769282,
-    "P": 30.973762,
-    "S": 31.972071,
-    "Cl": 34.968852721,  # Cl 37: 36.9659
-    "Br": 78.9183,  # Br 81: 80.9163
-    'I': 126.9045
+    "H": 1.007825,#0
+    "C": 12.00000,#1
+    "N": 14.003074,#2
+    "O": 15.994915,#3
+    'F': 18.99840322,#4
+    'Na':22.989769282,#5
+    "P": 30.973762,#6
+    "S": 31.972071,#7
+    "Cl": 34.968852721,  # Cl 37: 36.9659#8
+    'K':38.96371,#9
+    "Br": 78.9183,  # Br 81: 80.9163#10
+    'I': 126.9045#11
 
     # 'Co': 58.93319429
 }
-atom_list = ['H', 'C', 'N', 'O', 'F', 'Na','P', 'S', 'Cl', 'Br', 'I']
+atom_list = ['H', 'C', 'N', 'O', 'F', 'Na','P', 'S', 'Cl', 'K','Br', 'I']
+
 numpy_formula_format = np.int16
 
 atom_dict = {a: i for i, a in enumerate(atom_list)}
@@ -84,16 +86,16 @@ class MolecularFormula(object):
         return np.sum(atom_mass_array * self._data)
 
 
-def mass_to_formula(mass, mass_error, addition, precursor_formula=None):
-    mass = float(mass)
-    mass_error = float(mass_error)
-    if precursor_formula is None:
-        return precursor_mass_to_formula(mass, mass_error, addition)
-    else:
-        mol = MolecularFormula()
-        mol.from_string(precursor_formula)
-        result = product_mass_to_formula(mass, mass_error, addition, mol)
-        return result
+# def mass_to_formula(mass, mass_error, addition, precursor_formula=None):
+#     mass = float(mass)
+#     mass_error = float(mass_error)
+#     if precursor_formula is None:
+#         return precursor_mass_to_formula(mass, mass_error, addition)
+#     else:
+#         mol = MolecularFormula()
+#         mol.from_string(precursor_formula)
+#         result = product_mass_to_formula(mass, mass_error, addition, mol)
+#         return result
 
 def nl_to_formula(mass, mass_error, molecular_formula):
     mass = float(mass)
@@ -134,6 +136,64 @@ def nl_mass_to_formula(mass, mass_error, precursor_formula):
         formula = MolecularFormula(data)
         result.append(formula)
     return result
+from toolsets.constants import single_charged_adduct_mass
+def mass_to_formula(mass, mass_error=0.005):
+    mol_mass = mass
+    lo_mass = mol_mass - mass_error
+    hi_mass = mol_mass + mass_error
+    result = []
+    candidate_formula_array = np.zeros(len_atom_dict, numpy_formula_format)
+    _calculate_formula(lo_mass, hi_mass, candidate_formula_array,
+                       len(candidate_formula_array) - 1, result)
+    formulas = []
+    for r in result:
+        formulas.append(r.__str__())
+    return formulas
+def precursor_mass_to_formula(mass, mass_error, addition):
+    mol_mass = mass - single_charged_adduct_mass[addition]
+    # print(mol_mass)
+    lo_mass = mol_mass - mass_error
+    hi_mass = mol_mass + mass_error
+    # print(mass_error)
+
+    result = []
+    candidate_formula_array = np.zeros(len_atom_dict, numpy_formula_format)
+    _calculate_formula(lo_mass, hi_mass, candidate_formula_array,
+                       len(candidate_formula_array) - 1, result)
+
+    return result
+def _calculate_formula(mass_start, mass_end, candidate_formula_array, cur_i, result):
+    # print(cur_i)
+    atom_mass_cur = atom_mass_array[cur_i]
+    # print(atom_mass_cur)
+    atom_num = math.floor(mass_end / atom_mass_cur)
+    if cur_i == 0:
+        # print('i am in if loop')
+        # This is H
+        h_num_low = mass_start / atom_mass_cur
+        if atom_num >= h_num_low:
+            # print("i am in ifif")
+            candidate_formula_array[0] = atom_num
+            result.append(MolecularFormula(candidate_formula_array))
+        # else:
+        #     candidate_formula_array[0] = atom_num-1
+        #     result.append(MolecularFormula(candidate_formula_array))
+    else:
+        # print('i am in else loop')
+        if atom_num>0:
+            for i in range(atom_num+1):
+                f = np.copy(candidate_formula_array)
+                f[cur_i] = i
+                # print(mass_start - i * atom_mass_cur)
+                # print(atom_list[cur_i])
+                _calculate_formula(mass_start - i * atom_mass_cur, mass_end - i * atom_mass_cur,
+                                   f, cur_i - 1, result)
+
+        else:
+            f = np.copy(candidate_formula_array)
+            f[cur_i] = 0
+            _calculate_formula(mass_start, mass_end,
+                               f, cur_i - 1, result)
 # def _calculate_formula(mass_start, mass_end, candidate_formula_array, cur_i, result):
 #     atom_mass_cur = atom_mass_array[cur_i]
 #     atom_num = math.floor(mass_end / atom_mass_cur)
