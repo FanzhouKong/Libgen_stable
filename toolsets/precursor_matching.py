@@ -19,7 +19,7 @@ def precursor_matching_multiple(feature_paths, std_list_paths, library_names):
         matched_all = pd.concat([matched_all, matched_temp], axis=0, ignore_index=True)
     matched_all['library_id'] = np.arange(len(matched_all))
     return(matched_all)
-def precursor_matching_dataframe(features_all, std_list_all, if_clean = True):
+def precursor_matching_dataframe(features_all, std_list_all, if_clean = True, mode = 'max'):
     matched = pd.DataFrame()
     for mix in tqdm(std_list_all['mix'].unique()):
         feature_mix = string_search(features_all, 'mix', mix)
@@ -30,11 +30,15 @@ def precursor_matching_dataframe(features_all, std_list_all, if_clean = True):
 
     print("i have that much spectra before cleaninig:", str(len(matched)))
     print("i have that much compounds before cleaning:", str(len(matched['reference_inchikey'].unique())))
+    # return(matched)
     if if_clean ==True:
         peaks_cleaned = []
         spectral_entropy_lst = []
         for index, row in tqdm(matched.iterrows(), total=len(matched)):
-            cleaned_peak = clean_spectrum(row['peaks'], row['reference_precursor_mz'])
+            if mode =='max':
+                cleaned_peak = clean_spectrum(row['msms'])
+            elif mode =='weighted':
+                cleaned_peak = clean_spectrum(row['wa_msms'])
             peaks_cleaned.append(cleaned_peak)
             spectral_entropy_lst.append(spectral_entropy(cleaned_peak))
 
@@ -43,7 +47,7 @@ def precursor_matching_dataframe(features_all, std_list_all, if_clean = True):
         matched = matched[matched['spectral_entropy']>0.5]
         matched.reset_index(inplace=True, drop=True)
         matched['library_id'] = np.arange(len(matched))
-
+    matched.drop(['ms_level','charge','base_name','msms','wa_msms','peak_range_idx','pmz_bin', 'mz_offset'], inplace=True, axis=1)
     return(matched)
 
 def find_adduct_columns(columns, adducts = None):
@@ -70,25 +74,24 @@ def _precursor_matching_mix(std_list_mix, features, step = 0.005):
         for adduct in adducts:
             # print(row[adduct])
             try:
-                raw_matched = quick_search_sorted(features, 'precursor_mz', float(row[adduct]), step = step)
+                raw_matched = quick_search_sorted(features, 'precursor_mz', float(row[adduct])-step, float(row[adduct])+step)
             except:
                 print(row[adduct])
             if len(raw_matched)>0:   #there is at least 1 valid match
                 # raw_matched.sort_values(by = 'ms1_intensity', inplace=True, ascending= False)
-
-                matched_mix= matched_mix.append([pd.DataFrame([row[reference_columns]])]*len(raw_matched), ignore_index=True)
+                matched_mix = pd.concat([matched_mix, pd.DataFrame([row[reference_columns]]*len(raw_matched))], ignore_index=True)
+                # matched_mix= matched_mix.append([pd.DataFrame([row[reference_columns]])]*len(raw_matched), ignore_index=True)
                 raw_mix= pd.concat([raw_mix, raw_matched],ignore_index=True)
                 reference_adduct.extend([adduct]*len(raw_matched))
                 reference_precursor_mz.extend([row[adduct]]*len(raw_matched))
         #     break
         # break
     # print(len(matched_mix))
-    # return (matched_mix)
+
     matched_mix.columns = ['reference_'+col_name for col_name in matched_mix.columns]
     matched_mix['reference_adduct']= reference_adduct
     matched_mix['reference_precursor_mz']=reference_precursor_mz
     matched_mix_spec = pd.concat([matched_mix, raw_mix], axis=1)
-
     if len(matched_mix_spec)>0:
         matched_mix_spec['mz_offset'] = abs(matched_mix_spec['precursor_mz']-matched_mix_spec['reference_precursor_mz'])
         recovery_percent = len(set(matched_mix_spec['reference_inchikey']))/len(set(std_list_mix['inchikey']))*100

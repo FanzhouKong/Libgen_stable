@@ -473,6 +473,8 @@ def entropy_identity(msms1, msms2,pmz = None,NIST =False, mass_error = 0.02):
     if pmz is not None:
         msms1 = truncate_msms(msms1, pmz-1.6)
         msms2 = truncate_msms(msms2, pmz-1.6)
+    if num_peaks(msms1)==0 or num_peaks(msms2)==0:
+        return(np.NAN)
     msms1 = normalize_spectrum(msms1, total='half')
     msms2 = normalize_spectrum(msms2, total='half')
 

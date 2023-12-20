@@ -241,8 +241,8 @@ def export_library_msp(data,output_location, typeofmsms='peaks_denoised_normaliz
         entry = entry+'Ion_mode: '+ionmode+ '\n'
         entry = (entry + 'Comment: ' + 'method_'+str(row['comments'])+'ms1intensity'+'_'+str(row['peak_apex_intensity'])+"_"
                 +'ei_'+str(row['ei']) + '\n')
-        entry = entry + 'Spectrum_entropy: ' +str((row['spectrum_entropy'])) + '\n'
-        entry = entry + 'Normalized_entropy: ' + str((row['normalized_entropy'])) + '\n'
+        entry = entry + 'Spectrum_entropy: ' +str((row['spectral_entropy'])) + '\n'
+        # entry = entry + 'Normalized_entropy: ' + str((row['normalized_entropy'])) + '\n'
         entry = entry + 'Num peaks: ' + str(num_peaks(row[typeofmsms])) + '\n'
         entry = entry + row[typeofmsms]
         # entry = entry +str(row['count'])

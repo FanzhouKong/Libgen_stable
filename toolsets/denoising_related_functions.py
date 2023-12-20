@@ -22,49 +22,30 @@ RDLogger.DisableLog('rdApp.*')
 import time
 from toolsets.std_list_prep import calculate_precursormz
 # reference_db_sorted = pd.read_csvl('/Users/fanzhoukong/Documents/GitHub/Libgen_data/formula_db/formulaDB_sorted.csv')
-def denoise_dyn(msms, precursor_mz):
-    msms = so.sort_spectrum(msms)
-    mass, intensity = so.break_spectra(msms)
-    index_start = np.searchsorted(mass, precursor_mz-1.6,side = 'left')
-    mass_parent = mass[index_start:]
-    intensity_parent = intensity[index_start:]
-    mass_frag = mass[0:index_start]
-    intensity_frag = intensity[0:index_start]
-    threshod =np.quantile(intensity_frag, 0.1)
-    mass_d = []
-    intensity_d = []
-    for i in range(0, len(mass_frag)):
-        if intensity_frag[i]>threshod:
-            mass_d.append(mass_frag[i])
-            intensity_d.append(intensity_frag[i])
-    if len(mass_d)==0:
-        return np.NAN
-    mass_d.extend(mass_parent)
-    intensity_d.extend(intensity_parent)
-    return(so.sort_spectrum(so.pack_spectra(mass_d, intensity_d)))
-def denoise_bp(msms, precursor_mz,threshold = 1):
-    msms = so.sort_spectrum(msms)
-    mass, intensity = so.break_spectra(msms)
-    index_start = np.searchsorted(mass, precursor_mz-1.6,side = 'left')
-    mass_parent = mass[index_start:]
-    intensity_parent = intensity[index_start:]
-    mass_frag = mass[0:index_start]
-    intensity_frag = intensity[0:index_start]
-    bp_int = np.max(intensity_frag)*threshold/100
-    mass_d = []
-    intensity_d = []
-    for i in range(0, len(mass_frag)):
-        if intensity_frag[i]>bp_int:
-            mass_d.append(mass_frag[i])
-            intensity_d.append(intensity_frag[i])
-    if len(mass_d)==0:
-        return np.NAN
-    mass_d.extend(mass_parent)
-    intensity_d.extend(intensity_parent)
-    return(so.sort_spectrum(so.pack_spectra(mass_d, intensity_d)))
+from tqdm import tqdm
 
-    # else:
-
+def denoise_df(matched, refernce_db_sorted, msms_col='peaks_recalibrated',smiles_col='reference_smiles', adduct_col='reference_adduct', mass_error = 0.01, good_quality_only = True):
+    matched_return = matched.copy()
+    msms_denoised = []
+    ei = []
+    comments = []
+    for index, row in tqdm(matched_return.iterrows(), total= len(matched_return)):
+        try:
+            msms_row, ei_row = denoise_h(row[msms_col], row[smiles_col], row[adduct_col], refernce_db_sorted, mass_error)
+            msms_denoised.append(msms_row)
+            ei.append(ei_row)
+            comments.append('denoised')
+        except:
+            msms_denoised.append(np.NAN)
+            ei.append(0)
+            comments.append('error')
+    try:
+        matched_return['peaks_denoised']=msms_denoised
+        matched_return['comments']=comments
+        matched_return['ei']=ei
+    except:
+        return(msms_denoised, ei, comments)
+    return(matched_return)
 def denoise_h(msms, smiles, adduct, reference_db_sorted, mass_error = 0.01):
     start = time.time()
     msms = so.sort_spectrum(msms)
@@ -97,6 +78,7 @@ def denoise_h(msms, smiles, adduct, reference_db_sorted, mass_error = 0.01):
             mass_tbd.append(mass_frag[cur_i])
             intensity_tbd.append(intensity_frag[cur_i])
     check_1 = time.time()
+    # print('time at check point 1: ',check_1-start)
     # all_possible_formulas = get_all_formulas(formula)
     # all_allowed_formulas, all_allowed_masses = get_all_allowed_formula_mass(all_possible_formulas)
     for i in range(len(mass_tbd)):
@@ -173,6 +155,46 @@ def denoise_h_formula(msms, formula, parent_ion, adduct, reference_db_sorted, ma
     intensity_d.extend(intensity_parent)
     return(so.sort_spectrum(so.pack_spectra(mass_d, intensity_d)), ei)
     # return(so.pack_spectra(mass_d, intensity_d), state, mass_error)
+def denoise_dyn(msms, precursor_mz):
+    msms = so.sort_spectrum(msms)
+    mass, intensity = so.break_spectra(msms)
+    index_start = np.searchsorted(mass, precursor_mz-1.6,side = 'left')
+    mass_parent = mass[index_start:]
+    intensity_parent = intensity[index_start:]
+    mass_frag = mass[0:index_start]
+    intensity_frag = intensity[0:index_start]
+    threshod =np.quantile(intensity_frag, 0.1)
+    mass_d = []
+    intensity_d = []
+    for i in range(0, len(mass_frag)):
+        if intensity_frag[i]>threshod:
+            mass_d.append(mass_frag[i])
+            intensity_d.append(intensity_frag[i])
+    if len(mass_d)==0:
+        return np.NAN
+    mass_d.extend(mass_parent)
+    intensity_d.extend(intensity_parent)
+    return(so.sort_spectrum(so.pack_spectra(mass_d, intensity_d)))
+def denoise_bp(msms, precursor_mz,threshold = 1):
+    msms = so.sort_spectrum(msms)
+    mass, intensity = so.break_spectra(msms)
+    index_start = np.searchsorted(mass, precursor_mz-1.6,side = 'left')
+    mass_parent = mass[index_start:]
+    intensity_parent = intensity[index_start:]
+    mass_frag = mass[0:index_start]
+    intensity_frag = intensity[0:index_start]
+    bp_int = np.max(intensity_frag)*threshold/100
+    mass_d = []
+    intensity_d = []
+    for i in range(0, len(mass_frag)):
+        if intensity_frag[i]>bp_int:
+            mass_d.append(mass_frag[i])
+            intensity_d.append(intensity_frag[i])
+    if len(mass_d)==0:
+        return np.NAN
+    mass_d.extend(mass_parent)
+    intensity_d.extend(intensity_parent)
+    return(so.sort_spectrum(so.pack_spectra(mass_d, intensity_d)))
 def denoise_w(msms, smiles, adduct, reference_db_sorted, mass_error = 0.005):
     start = time.time()
     msms = so.sort_spectrum(msms)
@@ -323,7 +345,8 @@ def get_loss_candidate(mass, reference_db, step):
     losses = pd.DataFrame()
     for m in [mass_neg, mass, mass_pos]:
         # print(m)
-        losses = losses.append(quick_search_sorted(reference_db, 'mass', m, step))
+        losses = pd.concat([losses, quick_search_sorted(reference_db, 'mass', m-step, m+step)], ignore_index=True)
+        # losses = losses.append(quick_search_sorted(reference_db, 'mass', m-step, m+step))
     return (losses)
 def check_loss(loss_formula_candidate, formula):
     # print(formula)

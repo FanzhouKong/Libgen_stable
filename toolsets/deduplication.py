@@ -4,14 +4,16 @@ from tqdm import tqdm
 from molmass import Formula
 import numpy as np
 from toolsets.spectra_operations import weighted_average_spectra
-from toolsets.search import string_search, num_search, quick_search_sorted
+from toolsets.search import string_search, num_search, quick_search_values
 import toolsets.spectra_operations as so
-def deduplication(data, reference_col = 'reference_inchikey', rt_offset = 5/60):
+def deduplication(data_input, reference_col = 'reference_inchikey', rt_offset = 5/60):
+    data = data_input.copy()
+    data['seed_intensity']=data['peak_apex_intensity']*np.log10(data['snr'])
     matched_refined = pd.DataFrame()
     for key in tqdm(data[reference_col].unique()):
         data_temp = string_search(data, reference_col, key)
-        master_seed = data_temp.iloc[np.argmax(data_temp['peak_apex_intensity'])]
-        data_retain = quick_search_sorted(data_temp, 'rt', master_seed['rt'], step=rt_offset, ifsorted=False)
+        master_seed = data_temp.iloc[np.argmax(data_temp['seed_intensity'])]
+        data_retain = quick_search_values(data_temp, 'rt', master_seed['rt']-rt_offset, master_seed['rt']+rt_offset, ifsorted=False)
         data_retained=add_comment_retained(data_retain)
         data_recheck = data_temp[~data_temp['library_id'].isin(data_retained['library_id'])]
         data_recheked=recheck(data_retained, data_recheck)
@@ -31,38 +33,36 @@ def recheck(data_retained, data_recheck):
             reference_peak = get_seed_data(data_retained_adduct,'peaks')
             # print(threshold)
             for index, row in data_recheck_adduct.iterrows():
-                entropy_similarity = so.entropy_similarity_default(reference_peak, row['peaks'])
+                entropy_similarity = so.entropy_identity(reference_peak, row['peaks'], pmz = row['reference_precursor_mz'])
                 # print(entropy_similarity)
-                if row['peak_apex_intensity']>=threshold and entropy_similarity >0.7:
-                    comments.append(str(np.round(entropy_similarity,2))+'/'+str(np.round(row['peak_apex_intensity']/(threshold*3)*100, 1)))
-                    updated_names.append(row['reference_name']+'_minor')
-                    # print(threshold*3)
-                    rechecked = rechecked.append(row)
+                if row['peak_apex_intensity']>=threshold and entropy_similarity ==entropy_similarity:
+                    if entropy_similarity>0.7:
+                        comments.append(str(np.round(entropy_similarity,2))+'/'+str(np.round(row['peak_apex_intensity']/(threshold*3)*100, 1)))
+                        updated_names.append(row['reference_name']+'_minor')
+                        # print(threshold*3)
+                        rechecked = pd.concat([rechecked, pd.DataFrame([row])], ignore_index=True)
+                    # rechecked = rechecked.append(row)
     rechecked['comments']=comments
     rechecked['reference_name']=updated_names
     return(rechecked)
 def add_comment_retained(data_retained):
     data_retained_return = pd.DataFrame()
     updated_name = []
-    comments = []
+
     for adduct in data_retained['reference_adduct'].unique():
         data_temp = string_search(data_retained, 'reference_adduct', adduct)
         master_seed = data_temp.iloc[np.argmax(data_temp['peak_apex_intensity'])]
         for index, row in data_temp.iterrows():
-            entropy_similarity=so.entropy_similarity_default(master_seed['peaks'],
-                                                             row['peaks']
-                                                             )
-            comments.append(str(np.round(entropy_similarity,2))+'/'+str(np.round(row['peak_apex_intensity']/master_seed['peak_apex_intensity']*100,1)))
             if row['peak_apex_intensity']==master_seed['peak_apex_intensity']:
                 updated_name.append(row['reference_name']+'_major')
             else:
                 updated_name.append(row['reference_name']+'_'+str(np.round(row['peak_apex_intensity']/master_seed['peak_apex_intensity']*100,1))+"%")
             # print(row['reference_name'])
         data_retained_return=pd.concat([data_retained_return, data_temp], ignore_index=True)
+
     data_retained_return['reference_name']=updated_name
-    data_retained_return['comments']=comments
     return(data_retained_return)
-def get_seed_data(data_temp, return_col,seed_col = 'peak_apex_intensity'):
+def get_seed_data(data_temp, return_col,seed_col = 'seed_intensity'):
     master_seed = data_temp.iloc[np.argmax(data_temp[seed_col])]
     return(master_seed[return_col])
 

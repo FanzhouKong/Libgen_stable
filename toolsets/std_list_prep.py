@@ -12,11 +12,20 @@ from toolsets.search import string_search
 from rdkit import RDLogger
 RDLogger.DisableLog('rdApp.*')
 from toolsets.API_gets import inchi_to_smiles
+def get_clean_std_list(std_list_raw, smile_col = 'smiles_fetched', info_col = None):
+    if smile_col not in std_list_raw.columns and info_col is not None:
+        std_list = complete_smiles(std_list_raw, reference_col=info_col)
+    else:
+        std_list = std_list_raw.copy()
+    std_list = complete_formula(std_list, 'smiles_fetched')
+    std_list_unsalted =neutrilize_salt_df(salt_df_input=std_list)
+    std_list_cleaned = std_list_cleanup(std_list_unsalted, 'name')
+    return(std_list_cleaned)
 
 def std_list_cleanup(std_list_nt, name_column = 'name'):
     std_list = { 'name': std_list_nt[name_column],
              # 'abb':std_list_nt['abbreviated'],
-            # 'inchikey': std_list_nt['uncharged_inchikey'],
+            'inchikey': std_list_nt['uncharged_inchikey'],
             'mix':std_list_nt['mix'],
                  'smiles':std_list_nt['uncharged_smiles'],
                  'formula':std_list_nt['uncharged_formula'],
@@ -125,7 +134,7 @@ def neutrilize_salt_df(salt_df_input, salts_smart='[Na+,K+,Cl-,HCl,HBr]', smile_
                 uncharged_result[tail].append(ExactMolWt(mol_uncharged))
     for i in uncharged_result.keys():
         salt_df[i]=uncharged_result[i]
-    # salt_df = recalculate_inchikey(salt_df)
+    salt_df = recalculate_inchikey(salt_df)
 
     return(salt_df)
 
@@ -140,23 +149,26 @@ def recalculate_inchikey(std_list):
     std_list['uncharged_inchikey']=uncharged_inchikey
     return(std_list)
 
-def complete_smiles(data, name_column, if_na = False):
 
-    std_list_all = data.copy()
-    names_unique = std_list_all[name_column].unique()
-    from toolsets.API_gets import name_to_smiles
-    smiles_unique = []
-    for name in tqdm(names_unique):
-        smiles_unique.append(name_to_smiles(name))
+def complete_smiles(data, reference_col='inchikey', if_na = False):
+    if reference_col in ['inchikey', 'name']==False:
+        print('allowed values are inchikey or name')
+        return
+
+    std_list = data.copy()
+    unique_values = data[reference_col].unique()
+    smiles_all = []
+    for value in tqdm(unique_values):
+        smiles_all.append(inchi_to_smiles(value))
     smiles = []
-    for index, row in std_list_all.iterrows():
-        idx = list(names_unique).index(row[name_column])
-        smiles.append(smiles_unique[idx])
-    std_list_all['smiles']=smiles
-    if if_na ==False:
-        std_list_all.dropna(subset=['smiles'], inplace=True)
+    for index, row in std_list.iterrows():
+        idx = list(unique_values).index(row[reference_col])
+        smiles.append(smiles_all[idx])
+    std_list['smiles_fetched']=smiles
+    print('there is '+str(int(std_list['smiles_fetched'].isna().sum()))+' na values in smiles')
+    std_list.dropna(subset=['smiles_fetched'], inplace=True)
+    return std_list
 
-    return std_list_all
 def complete_formal_charge(data, smiles_column = 'smiles'):
     fcs = []
     for index, row in data.iterrows():
@@ -164,7 +176,7 @@ def complete_formal_charge(data, smiles_column = 'smiles'):
             mol_temp = Chem.MolFromSmiles(row[smiles_column])
             fcs.append(cal_formal_charge(mol_temp))
         except:
-            formulas.append(np.NaN)
+            fcs.append(np.NaN)
     data['formal_charges']=fcs
     return (data)
 # def complete_guess_adduct(std_list):
@@ -220,22 +232,22 @@ def calculate_precursormz(smiles, adduct):
     mono_mass =ExactMolWt(mol_)
     if adduct in single_charged_adduct_mass.keys():
         if cal_formal_charge(mol_)==0:
-            if adduct in single_charged_adduct_mass.keys():
+            if adduct not in ['+','-','[M]+','[M+]','[M+]+','[M]-','[M-]','[M-]-']:
                 pmz = mono_mass+single_charged_adduct_mass[adduct]
             else:
                 pmz = 0
         elif cal_formal_charge(mol_)==1:
-            if adduct == '[M]+':
+            if adduct in ['+','[M]+','[M+]','[M+]+']:
                 pmz = mono_mass
             else:
                 pmz = 0
         elif cal_formal_charge(mol_)==-1:
-            if adduct == '[M]-':
+            if adduct == ['-','[M]-','[M-]','[M-]-']:
                 pmz = mono_mass
             else:
                 pmz = 0
     else:
-        # print(f'the adduct {adduct} you have entered is not a legit adduct')
+        print(f'the adduct {adduct} you have entered is not a legit adduct')
         return(np.NAN)
     return(np.round(pmz,7))
 

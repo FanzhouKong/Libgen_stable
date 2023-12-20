@@ -5,12 +5,12 @@ from tqdm import  tqdm
 from urllib.request import urlopen
 from urllib.parse import quote
 
-def name_to_smiles(ids):
-    try:
-        r = requests.get(f'https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/{ids}/property/CanonicalSMILES/JSON').json()
-        return r['PropertyTable']['Properties'][0]['CanonicalSMILES']
-    except:
-        return np.NAN
+# def name_to_smiles(ids):
+#     # try:
+#         r = requests.get(f'https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/{ids}/property/CanonicalSMILES/JSON').json()
+#         return r
+#     # except:
+#     #     return np.NAN
 def smiles_to_name(smile):
     try:
         r = requests.get(f'https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/smiles/{smile}/property/IUPACName/JSON').json()
