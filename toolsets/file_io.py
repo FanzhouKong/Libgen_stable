@@ -1,6 +1,6 @@
 import pandas as pd 
 # import toolsets.spectra_operations as so
-from toolsets.spectra_operations import clean_spectrum, break_spectra, pack_spectra, convert_nist_to_string
+# from toolsets.spectra_operations import clean_spectrum, break_spectra, pack_spectra,convert_arr_to_string
 from toolsets.search import num_search, string_search
 import re
 import os
@@ -12,7 +12,43 @@ import shutil
 import numpy as np
 from tqdm import tqdm
 from fuzzywuzzy import fuzz
+from rdkit.Chem.Descriptors import ExactMolWt
 import pymzml
+import toolsets.chem_utils as cu
+import json
+def save_df(df, save_path):
+    data = df.copy()
+    cols = []
+    for c in df.columns:
+        if isinstance(df.iloc[0][c], np.ndarray):
+            if np.shape(df.iloc[0][c])[1]==2:
+                cols.append(c)
+    print(cols)
+    if save_path.endswith('.csv') == False:
+        save_path = save_path+'.csv'
+    for col in cols:
+        specs = []
+        for index, row in tqdm(data.iterrows(), total = len(data)):
+            specs.append(so.convert_arr_to_string(row[col]))
+        data[col]=specs
+    data.to_csv(save_path, index = False)
+def read_df(path):
+    df = pd.read_csv(path)
+    print('done read in df')
+    cols = []
+    for c in df.columns:
+        if check_pattern(df.iloc[0][c]):
+            cols.append(c)
+    for col in cols:
+        df[col] = [so.convert_string_to_arr(y[col]) for x,y in df.iterrows()]
+    return(df)
+def check_pattern(input_string):
+    # Regular expression to match pairs of floats in standard or scientific notation separated by a tab,
+    # with each pair on a new line
+    if isinstance(input_string, str):
+        if '\t' in input_string:
+            return True
+    return False
 def split_pos_neg(all_folder, tail = '.mzML'):
     print(all_folder)
     pos_folder = os.path.join(all_folder, 'pos')
@@ -44,6 +80,7 @@ def prepare_sample_list(filelist):
     # print(fraction_idx)
     # [mylist[i] for i in idx]
     # return(fraction_idx)
+    # samples, qcs, blks
     return([filelist[i] for i in fraction_idx], [filelist[i] for i in qc_idx], [filelist[i] for i in blk_idx])
 def get_file_list(dir, tail, with_tail = False):
     file_list = []
@@ -54,7 +91,6 @@ def get_file_list(dir, tail, with_tail = False):
                     file_list.append(file)
                 else:
                     file_list.append(file.split('.')[0])
-    # qc_list = get_list_idx(file_list, 'qc')
     return(file_list)
 def get_list_idx(lst, pattern):
     pattern = pattern.lower()
@@ -79,30 +115,11 @@ def specify_column(keyword, column_name):
 def parse_file_name(filepath):
     import ntpath
     return(ntpath.basename(filepath))
-def readin_alignment(file):
-    df = pd.read_csv(file,
-                     sep = '\t',
-                     header=[4]
-                     )
-    # df = pd.read_csv(file,
-    #                  sep = '\t',
-    #                  header=[4]
-    #                  )
-    # reference_columns = [col for col in std_list_mix.columns if col not in adducts]
-
-    msms = []
-    for index, row in df.iterrows():
-        try:
-            msms.append(row['MS/MS spectrum'].replace(' ', '\n').replace(':', '\t'))
-        except:
-            msms.append(np.NAN)
-    df['peaks']=msms
-    return(df)
 
 
 
-def readin_peak_list(file, msial = False):
-    if msial == True:
+def readin_peak_list(file, alighment = False):
+    if alighment == True:
         df = pd.read_csv(file,
                          sep = '\t',
                          header=[4],
@@ -128,12 +145,6 @@ def read_msp_files(msp_path, if_rt = False):
     # precursor_col = specify_column('')
     print('checking spectrum')
     msp_with_spectrum = msp[msp['spectrum'].map(lambda d: len(d)) > 0]
-    precursor_col = specify_column('PRECURSORMZ', msp_with_spectrum.columns)
-    if if_rt == True:
-        rt_col = specify_column('RETENTIONTIME', msp_with_spectrum.columns)
-        msp_with_spectrum[rt_col]=pd.to_numeric(msp_with_spectrum[rt_col])
-    # msp_with_spectrum[precursor_col]=pd.to_numeric(msp_with_spectrum[precursor_col])
-    adduct_col = specify_column('PRECURSOR_type', msp_with_spectrum.columns)
     # print('converting spectrum')
     # peaks = []
     # for index, row in tqdm(msp_with_spectrum.iterrows(), total = len(msp_with_spectrum)):
@@ -166,88 +177,101 @@ def check_missing_files(file_name_list, tail, source_dir):
         elif len(found_file)>1:
             duplicate_files.append(mix)
     return(good_files, duplicate_files, missing_files)
-def read_in_alphapept(path_to_features, peak_purity = 0.001, ifclean = False):
-    import toolsets.spectra_operations as so
-    features = pd.read_csv(path_to_features)
-    for index, row in features.iterrows():
-        try:
-            features.at[index, "peaks"]=parse_feature_peaks(row['peaks'])
-        except ValueError:
-            print("the scannumber is ", row['scan_number'])
-            print("the problematic feature is ", path_to_features.split("/")[-1])
-            features.at[index, "peaks"]=np.NAN
-            # break
-    features.drop_duplicates(subset = ['scan_number'], keep = "first", inplace = True, ignore_index = True)
-    # the above line has been changed, it is actually the right one now!!!!
-    features = num_search(features, 'ms1_precursor_intensity', 0, ">", inclusion = False)
-    features = num_search(features, 'ms1_intensity_ratio', peak_purity, ">", inclusion = False)
-    vc = features['charge'].value_counts().rename_axis('charge').reset_index(name='counts')
-    vc.sort_values(by=['counts'], inplace=True, ascending=False)
-    if vc.iloc[0]['charge']>0:
-        features = string_search(features, 'charge', 1)
-    elif vc.iloc[0]['charge']<0:
-        features = string_search(features, 'charge', -1)
-    if ifclean == True:
-        peaks_cleaned = []
-        for index, row in features.iterrows():
-            peaks_cleaned.append(so.clean_spectrum(row['peaks'], max_mz = row['precursor_mz'],
-            tolerance = 0.02, ifppm = False, noise_level = 0.00))
-        features['peaks_cleaned']=peaks_cleaned
-    # features_plus = string_search(features, 'charge', 1)
-    # features_minus = string_search(features, 'charge', -1)
-    # features['peaks'] = features.apply(parse_feature_peaks, axis = 1)
-    return features
-
-def parse_feature_peaks(peaks):
-    peaks_split = peaks.replace('[','').replace(']','').split('\n')
-    mass = []
-    intensity = []
-    for peak in peaks_split:
-        peak = peak.strip()
-        mass_temp = float(peak.split(" ")[0])
-        intensity_temp = float(peak.split(" ")[-1])
-        mass.append(mass_temp)
-        intensity.append(intensity_temp)
-
-    return(pack_spectra(mass, intensity))
+# def read_in_alphapept(path_to_features, peak_purity = 0.001, ifclean = False):
+#     import toolsets.spectra_operations as so
+#     features = pd.read_csv(path_to_features)
+#     for index, row in features.iterrows():
+#         try:
+#             features.at[index, "peaks"]=parse_feature_peaks(row['peaks'])
+#         except ValueError:
+#             print("the scannumber is ", row['scan_number'])
+#             print("the problematic feature is ", path_to_features.split("/")[-1])
+#             features.at[index, "peaks"]=np.NAN
+#             # break
+#     features.drop_duplicates(subset = ['scan_number'], keep = "first", inplace = True, ignore_index = True)
+#     # the above line has been changed, it is actually the right one now!!!!
+#     features = num_search(features, 'ms1_precursor_intensity', 0, ">", inclusion = False)
+#     features = num_search(features, 'ms1_intensity_ratio', peak_purity, ">", inclusion = False)
+#     vc = features['charge'].value_counts().rename_axis('charge').reset_index(name='counts')
+#     vc.sort_values(by=['counts'], inplace=True, ascending=False)
+#     if vc.iloc[0]['charge']>0:
+#         features = string_search(features, 'charge', 1)
+#     elif vc.iloc[0]['charge']<0:
+#         features = string_search(features, 'charge', -1)
+#     if ifclean == True:
+#         peaks_cleaned = []
+#         for index, row in features.iterrows():
+#             peaks_cleaned.append(so.clean_spectrum(row['peaks'], max_mz = row['precursor_mz'],
+#             tolerance = 0.02, ifppm = False, noise_level = 0.00))
+#         features['peaks_cleaned']=peaks_cleaned
+#     # features_plus = string_search(features, 'charge', 1)
+#     # features_minus = string_search(features, 'charge', -1)
+#     # features['peaks'] = features.apply(parse_feature_peaks, axis = 1)
+#     return features
+#
+# def parse_feature_peaks(peaks):
+#     peaks_split = peaks.replace('[','').replace(']','').split('\n')
+#     mass = []
+#     intensity = []
+#     for peak in peaks_split:
+#         peak = peak.strip()
+#         mass_temp = float(peak.split(" ")[0])
+#         intensity_temp = float(peak.split(" ")[-1])
+#         mass.append(mass_temp)
+#         intensity.append(intensity_temp)
+#
+#     return(pack_spectra(mass, intensity))
 
 
 
 
 
 from tqdm import tqdm
+from rdkit import Chem
+# from rdkit.Chem.rdMolDescriptors import CalcMolFormula
+# from rdkit.Chem.Descriptors import ExactMolWt
 from toolsets.spectra_operations import num_peaks
-def export_library_msp(data,output_location, typeofmsms='peaks_denoised_normalized', ifcollision_energy = False):
+
+from toolsets.spectra_operations import spectral_entropy, truncate_spectrum, convert_arr_to_string
+def export_library_msp(data,output_location, typeofmsms='msms_denoised', ifcollision_energy = False):
     entry = ''
     for index, row in tqdm(data.iterrows(), total = len(data)):
-        entry = entry + 'Name: ' + row['reference_name'] + '\n'
-        entry = entry + 'InChIKey: ' + str(row['reference_inchikey']) + '\n'
-        entry = entry + 'SMILES: ' + str(row['reference_smiles']) + '\n'
-        entry = entry + 'RETENTIONTIME: ' + str(row['rt']) + '\n'
-        entry = entry +'Spectrum_type: '+'MS2'+ '\n'
-        entry = entry + 'PrecursorMZ: ' + str(row['reference_precursor_mz']) + '\n'
-        # entry = entry + 'InChIKey: ' + str(row['reference_inchikey']) + '\n'
-        entry = entry + 'Formula: ' + row['reference_formula'] + '\n'
-        entry = entry + 'ExactMass: ' + str(row['reference_mono_mass']) + '\n'
-        entry = entry + 'Precursor_type: ' + row['reference_adduct'] + '\n'
-        if ifcollision_energy:
-            entry = entry + 'Collision_enerty: ' + str(row['Collision_energy']) + '\n'
-        # entry = entry + 'RETENTIONTIME: ' + str(row['retention_time_wa']) + '\n'
-        if row['reference_adduct'][-1]=='+':
-            # charge = '1+'
-            ionmode = 'P'
-        else:
-            ionmode = 'N'
-        entry = entry+'Ion_mode: '+ionmode+ '\n'
-        entry = (entry + 'Comment: ' + 'method_'+str(row['comments'])+'ms1intensity'+'_'+str(row['peak_apex_intensity'])+"_"
-                +'ei_'+str(row['ei']) + '\n')
-        entry = entry + 'Spectrum_entropy: ' +str((row['spectral_entropy'])) + '\n'
-        # entry = entry + 'Normalized_entropy: ' + str((row['normalized_entropy'])) + '\n'
-        entry = entry + 'Num peaks: ' + str(num_peaks(row[typeofmsms])) + '\n'
-        entry = entry + row[typeofmsms]
-        # entry = entry +str(row['count'])
-        entry = entry + '\n'
-        entry = entry + '\n'
+        if isinstance(row[typeofmsms], float) == False:
+            mol = Chem.MolFromSmiles(row['reference_smiles'])
+            entry = entry + 'Name: ' + row['reference_name'] + '\n'
+            entry = entry + 'InChIKey: ' + str(Chem.MolToInchiKey(mol)) + '\n'
+            entry = entry + 'SMILES: ' + str(row['reference_smiles']) + '\n'
+            entry = entry + 'RETENTIONTIME: ' + str(np.round(row['rt_apex'],2)) + '\n'
+            entry = entry + 'reference_rt: ' + str(row['reference_rt']) + '\n'
+            entry = entry +'Spectrum_type: '+'MS2'+ '\n'
+            entry = entry + 'PrecursorMZ: ' + str(row['precursor_mz']) + '\n'
+            # entry = entry + 'InChIKey: ' + str(row['reference_inchikey']) + '\n'
+
+            entry = entry + 'Formula: ' + cu.everything_to_formula(mol) + '\n'
+
+            entry = entry + 'ExactMass: ' + str(ExactMolWt(mol)) + '\n'
+            entry = entry + 'Precursor_type: ' + row['reference_adduct'] + '\n'
+            if ifcollision_energy:
+                entry = entry + 'Collision_enerty: ' + str(row['Collision_energy']) + '\n'
+            # entry = entry + 'RETENTIONTIME: ' + str(row['retention_time_wa']) + '\n'
+            if row['reference_adduct'][-1]=='+':
+                # charge = '1+'
+                ionmode = 'P'
+            else:
+                ionmode = 'N'
+            entry = entry+'Ion_mode: '+ionmode+ '\n'
+            entry = (entry + 'Comment: ' +str(row['comment'])+'_ms1intensity+'+str(np.round(row['ms1_intensity'],1))
+                    +'_ei_'+str(np.round(row['eis'],2)) + '\n')
+            try:
+                entry = entry + 'Spectrum_entropy: ' +str(spectral_entropy(truncate_spectrum(row[typeofmsms], row['precursor_mz']-1.6))) + '\n'
+            except:
+                entry = entry + 'Spectrum_entropy: ' +str(-1) + '\n'
+            # entry = entry + 'Normalized_entropy: ' + str((row['normalized_entropy'])) + '\n'
+            entry = entry + 'Num peaks: ' + str(num_peaks(row[typeofmsms])) + '\n'
+            entry = entry + convert_arr_to_string(row[typeofmsms])
+            # entry = entry +str(row['count'])
+            entry = entry + '\n'
+            entry = entry + '\n'
 
     #open text file
     text_file = open(output_location, "w",encoding='utf-8')

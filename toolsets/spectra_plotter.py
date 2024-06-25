@@ -27,70 +27,61 @@ from toolsets.search import quick_search_values
 
 # In[3]:
 
+import ast
+def head_to_tail_plot(msms1, msms2,mz_start = None, mz_end = None,pmz=None, pmz2= None,ms2_error = 0.02,
+                      color1 = None, color2 = None,lower=None, upper=None, identity = False, normalize = True,
+                      savepath = None, show= True, publication = False,fontsize = 12):
 
-def head_to_tail_plot(msms_1, msms_2,mz_start = None, mz_end = None,pmz1=None, pmz2= None, color1 = None, color2 = None,lower=None, upper=None, identity = False, normalize = True, ifNIST = False,savepath = None, show= True, fontsize = 12):
-
-    if ifNIST ==True:
-        msms_1 = so.convert_nist_to_string(msms_1)
-        msms_2 = so.convert_nist_to_string(msms_2)
-    if pmz1 is not None:
+    if msms1 is float or msms2 is float:
+        # return(np.NAN)
+        return(0)
+    if isinstance(msms1, str):
+        msms1 = ast.literal_eval(msms1)
+    if isinstance(msms2, str):
+        msms2 = ast.literal_eval(msms2)
+    msms1 = so.sort_spectrum(msms1)
+    msms2 = so.sort_spectrum(msms2)
+    if pmz is not None:
         if pmz2 is None:
-            pmz2 = pmz1
-    if pmz1 is not None and pmz2 is not None:
-        msms_1 = so.truncate_msms(msms_1, pmz1-1.6)
-        msms_2= so.truncate_msms(msms_2, pmz2-1.6)
-    mass1, intensity1 = so.break_spectra(msms_1)
-    mass1 = [float(x) for x in mass1]
-    intensity1 = [float(x) for x in intensity1]
-    d = {'m/z':mass1, 'intensity':intensity1}
-    msms1 = pd.DataFrame(d)
-    max_val = np.max(msms1['intensity'])
-    if normalize:
-        msms1["normalized_intensity"] = msms1['intensity'] / max_val * 100.0  # normalize intensity to percent
-    else:
-        msms1["normalized_intensity"]=msms1['intensity']
+            pmz2 = pmz
+    print('entropy similarity is', so.entropy_identity(msms1, msms2, pmz, ms2_error = ms2_error))
+    if pmz is not None and pmz2 is not None:
+        msms1 = so.truncate_spectrum(msms1, pmz-1.6)
+        msms2= so.truncate_spectrum(msms2, pmz2-1.6)
+    mass1, intensity1 = so.break_spectra(msms1)
+    intensity_nor1 = [x/np.max(intensity1)*100 for x in intensity1]
 
-    mass2, intensity2 = so.break_spectra(msms_2)
-    mass2 = [float(x) for x in mass2]
-    intensity2 = [float(x) for x in intensity2]
-    d = {'m/z':mass2, 'intensity':intensity2}
-
-    msms2 = pd.DataFrame(d)
-    if identity == True:
-        max_val = np.max(msms1['intensity'])
-    else:
-        max_val = np.max(msms2['intensity'])
-    if normalize:
-        msms2["normalized_intensity"] = msms2['intensity'] / max_val * 100.0  # normalize intensity to percent
-    else:
-        msms2["normalized_intensity"]=msms2['intensity']
+    mass2, intensity2 = so.break_spectra(msms2)
+    intensity_nor2 = [x/np.max(intensity2)*100 for x in intensity2]
 
     # return(msms1, msms2)
-    msms2['inverse_normalized_intensity']=-msms2['normalized_intensity']
-    if mz_start is not None and mz_end is not None:
-        print('i am in loop')
-        msms1 = quick_search_values(msms1, column_name='m/z', value_start=mz_start, value_end=mz_end, ifsorted=False)
-        msms2 = quick_search_values(msms2, column_name='m/z', value_start=mz_start, value_end=mz_end, ifsorted=False)
+    intensity_nor2=[-x for x in intensity_nor2]
         # msms1 = so.cut_msms(msms1, mz_lower = mz_start, mz_upper = mz_end)
         # msms2 = so.cut_msms(msms2, mz_lower = mz_start, mz_upper = mz_end)
     # return(msms1, msms2)
-    fig = plt.figure(figsize = (3, 2.5))#43
+    if publication == True:
+        wid = 3
+        hi = 2.5
+    else:
+        wid = 8
+        hi = 6
+    fig = plt.figure(figsize = (wid, hi))#43
     plt.subplots_adjust()
     ax = fig.add_subplot()
-    for i in range(len(msms1)):
+    for i in range(len(mass1)):
         if color1 == None:
-            plt.vlines(x = msms1.iloc[i]["m/z"], ymin = 0, ymax = msms1.iloc[i]["normalized_intensity"],color = 'blue')
+            plt.vlines(x = mass1[i], ymin = 0, ymax = intensity_nor1[i],color = 'blue')
         elif color1 != None:
-            plt.vlines(x =msms1.iloc[i]["m/z"], ymin = 0, ymax = msms1.iloc[i]["normalized_intensity"],color = color1)
-    if pmz1 != None:
-        plt.vlines(x = pmz1, ymin = 0, ymax = msms1['normalized_intensity'].max(),color = 'grey', linestyle='dashed')
-    for i in range(len(msms2)):
+            plt.vlines(x = mass1[i], ymin = 0, ymax = intensity_nor1[i],color = color1)
+    if pmz != None:
+        plt.vlines(x = pmz, ymin = 0, ymax = 100,color = 'grey', linestyle='dashed')
+    for i in range(len(mass2)):
         if color2 ==None:
-            plt.vlines(x = msms2.iloc[i][["m/z"]], ymax = 0, ymin = msms2.iloc[i]["inverse_normalized_intensity"], color = 'r')
+            plt.vlines(x = mass2[i], ymin = 0, ymax = intensity_nor2[i],color = 'r')
         elif color2 != None:
-            plt.vlines(x = msms2.iloc[i][["m/z"]], ymax = 0, ymin = msms2.iloc[i]["inverse_normalized_intensity"], color = color2)
+            plt.vlines(x = mass2[i], ymin = 0, ymax = intensity_nor2[i],color = color2)
     if pmz2 != None:
-        plt.vlines(x = pmz2, ymin = msms2['inverse_normalized_intensity'].min(), ymax = 0,color = 'grey', linestyle='dashed')
+        plt.vlines(x = pmz2, ymin = -100, ymax = 0,color = 'grey', linestyle='dashed')
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
     ax.get_xaxis().tick_bottom()
@@ -99,12 +90,15 @@ def head_to_tail_plot(msms_1, msms_2,mz_start = None, mz_end = None,pmz1=None, p
     ax.set_ylabel(r"$Intensity\,[\%]$")
     plt.xticks(rotation='vertical')
     if(mz_start is not None and mz_end is not None):
-        ax.set_xlim(lower, upper)
+        # print('ttt')
+        ax.set_xlim(mz_start, mz_end)
     # else:
-        # ax.set_xlim(-100, 100)
-    labels = ['100', '50', '0', '50', '100']
-    ax.set_yticklabels(labels)
-    ax.set_ylim(msms2['inverse_normalized_intensity'].min(), msms1['normalized_intensity'].max())
+    #     ax.set_xlim(-100, 100)
+    # labels = [-100, -50, 0, 50, 100]
+    # ax.set_yticklabels(labels)
+    # ax.set_ylim(msms2['inverse_normalized_intensity'].min(), msms1['normalized_intensity'].max())
+    ax.set_ylim(-100, +100)
+
     plt.axhline(y=0, color='black', linestyle='-')
     start, end = ax.get_ylim()
     plt.tight_layout()
@@ -116,9 +110,10 @@ def head_to_tail_plot(msms_1, msms_2,mz_start = None, mz_end = None,pmz1=None, p
 
     plt.grid(True, axis="y", color='black', linestyle=':', linewidth=0.1)
     # ax.grid(False)
+    # ax.set_xlim(50, upper)
     plt.tight_layout()
     if savepath != None:
-        plt.savefig(savepath, dpi = 300,facecolor = 'none', edgecolor = 'none')
+        plt.savefig(savepath, dpi = 300,facecolor = 'white', edgecolor = 'none')
     if show==True:
         return(plt)
     else:
@@ -126,25 +121,16 @@ def head_to_tail_plot(msms_1, msms_2,mz_start = None, mz_end = None,pmz1=None, p
 
 
 # In[10]:
-from toolsets.API_gets import GNPS_get
+
 from rdkit import Chem
 import os
-from toolsets.API_gets import inchi_to_smiles
 # from mimas.external.features_by_alphapept.load_mzml_data import load_mzml_data
 from tqdm import tqdm
-from toolsets.helpers import find_files
 from toolsets.spectra_operations import break_spectra, pack_spectra
 import matplotlib.pyplot as plt
 
-import multiprocessing
-from functools import partial
-from itertools import repeat
-from multiprocessing import Pool, freeze_support
-def molplot_from_inchikey(inchikey):
-    smile_temp = inchi_to_smiles(inchikey)
-    mol = Chem.MolFromSmiles(smile_temp)
-    mol
-    return(mol)
+
+
 
 
 
@@ -237,22 +223,35 @@ def _extract_MS1(mzml, scan_number):
     ms1_1 = pack_spectra(mzml['mass_list_ms1'][mzml['indices_ms1'][scan_number]:mzml['indices_ms1'][scan_number+1]],
                      mzml['int_list_ms1'][mzml['indices_ms1'][scan_number]:mzml['indices_ms1'][scan_number+1]])
     return (ms1_1)
-def ms2_plot(msms_1, pmz1 = None, lower=None, upper=None, savepath = None, color = 'blue'):
+def ms2_plot(msms_1, pmz = None, lower=None, upper=None, savepath = None, color = 'blue'):
+    if type(msms_1) is list:
+        msms_1 = so.convert_nist_to_string(msms_1)
+    if pmz is not None:
+        msms_1 = so.truncate_spectrum(msms_1, pmz-1.6)
     mass1, intensity1 = so.break_spectra(msms_1)
     mass1 = [float(x) for x in mass1]
     intensity1 = [float(x) for x in intensity1]
-    d = {'m/z':mass1, 'intensity':intensity1}
-    msms1 = pd.DataFrame(d)
-    max_val = np.max(msms1['intensity'])
-    msms1["normalized_intensity"] = msms1['intensity'] / max_val * 100.0  # normalize intensity to percent
-    
+
+    if lower is not None:
+        idx_left = np.searchsorted(mass1, lower, side= 'left')
+    else:
+        idx_left = 0
+    if upper is not None:
+        idx_right = np.searchsorted(mass1, upper, side = 'right')
+    else:
+        idx_right = len(mass1)
+    mass1 = mass1[idx_left:idx_right]
+    intensity1 = intensity1[idx_left:idx_right]
+    normalized_intensity = [x/np.max(intensity1)*100 for x in intensity1]
+
+
     fig = plt.figure(figsize = (4, 3))
     plt.subplots_adjust()
     ax = fig.add_subplot()
-    for i in range(len(msms1['m/z'])):
-        plt.vlines(x = msms1["m/z"][i], ymin = 0, ymax = msms1["normalized_intensity"][i],color = color, linewidth=2)
-    if pmz1 != None:
-        plt.vlines(x = pmz1, ymin = 0, ymax = 100,color = 'grey', linestyle='dashed')
+    for i in range(len(mass1)):
+        plt.vlines(x = mass1[i], ymin = 0, ymax = normalized_intensity[i],color = color, linewidth=2)
+    if pmz != None:
+        plt.vlines(x = pmz, ymin = 0, ymax = 100,color = 'grey', linestyle='dashed')
     # plt.legend()
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
@@ -285,7 +284,67 @@ def ms2_plot(msms_1, pmz1 = None, lower=None, upper=None, savepath = None, color
         plt.savefig(savepath, dpi = 300,facecolor = 'white', edgecolor = 'white')
 
     return(plt)
+def ms2_overlay(msms_1=None,msms_2=None,msms_3 = None, pmz = None, savepath = None):
+    #
+    # if pmz is not None:
+    #     msms_1 = so.truncate_spectrum(msms_1, pmz-1.6)
 
+
+
+
+    fig = plt.figure(figsize = (4, 3))
+    plt.subplots_adjust()
+    ax = fig.add_subplot()
+    if msms_1 is not None:
+        mass1, intensity1 = so.break_spectra(msms_1)
+        intensity1 = [x/np.max(intensity1)*100 for x in intensity1]
+        for i in range(len(mass1)):
+
+            plt.vlines(x = mass1[i], ymin = 0, ymax = intensity1[i],color = 'orange', linewidth=2)
+
+    if msms_2 is not None:
+        mass2, intensity2 = so.break_spectra(msms_2)
+        intensity2 = [x/np.max(intensity2)*100 for x in intensity2]
+        for i in range(len(mass2)):
+            plt.vlines(x = mass2[i], ymin = 0, ymax = intensity2[i],color = 'red', linewidth=2)
+    if msms_3 is not None:
+        mass3, intensity3 = so.break_spectra(msms_3)
+        intensity3 = [x/np.max(intensity3)*100 for x in intensity3]
+        for i in range(len(mass3)):
+            plt.vlines(x = mass3[i], ymin = 0, ymax = intensity3[i],color = 'blue', linewidth=2)
+
+    if pmz != None:
+        plt.vlines(x = pmz, ymin = 0, ymax = 100,color = 'grey', linestyle='dashed')
+    # plt.legend()
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+
+    ax.get_xaxis().tick_bottom()
+    ax.get_yaxis().tick_left()
+    ax.set_xlabel(r"$m/z$", fontsize = 12)
+    ax.set_ylabel(r"$Intensity\,[\%]$", fontsize = 12)
+    plt.xticks(rotation='vertical')
+    start, end = ax.get_xlim()
+    # start, end = ax.get_xlim(),
+    ax.set_ylim(0, 100)
+    plt.axhline(y=0, color='black', linestyle='-')
+    start, end = ax.get_ylim()
+    # ax.yaxis.set_ticks(np.arange(start, end + 1, 10))
+    plt.grid(True, axis="y", color='black', linestyle=':', linewidth=0.1)
+    ax.grid(False)
+    ax.set_facecolor("white")
+    ax.spines['bottom'].set_color('black')
+    ax.spines['top'].set_color('black')
+    ax.spines['right'].set_color('black')
+    ax.spines['left'].set_color('black')
+    # ax.set(xticklabels=[], yticklabels = [])
+    fig.tight_layout()
+    # fig.set(xlabel = None)
+    if savepath != None:
+        fig.tight_layout()
+        plt.savefig(savepath, dpi = 300,facecolor = 'white', edgecolor = 'white')
+
+    return(plt)
 def ms_figure_simple(msms1, savepath = None, color = 'blue'):
     import toolsets.spectra_operations as so
     # msms1 = (data_temp.iloc[0]['peaks'])

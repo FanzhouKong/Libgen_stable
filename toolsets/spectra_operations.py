@@ -3,7 +3,7 @@
 
 # In[ ]:
 
-import toolsets.mass_to_formula as mtf
+
 import re
 import pandas as pd
 import spectral_entropy as se
@@ -43,9 +43,14 @@ def check_spectrum(msms):
     return(sum(intensity))
 
 def sort_spectrum(msms):
+    if type(msms) == str:
+        msms = ast.literal_eval(msms)
+
     mass, intensity = break_spectra(msms)
-    mass_sorted, intensity_sorted = zip(*sorted(zip(mass, intensity)))
-    return(pack_spectra(list(mass_sorted), list(intensity_sorted)))
+    order = np.argsort(mass)
+    mass = mass[order]
+    intensity = intensity[order]
+    return pack_spectra(mass, intensity)
 
 
 # def clean_spectrum(msms,
@@ -78,13 +83,16 @@ def sort_spectrum(msms):
 #         return(msms)
 #     else:
 #         return(msms)
+def get_fragment_intensity(msms, pmz):
 
-def truncate_msms(msms, max_mz):
-    # if need_normalize:
-    #     msms = normalize_spectra(msms)
-    #     msms = so.sort_spectra(msms)
-    # else:
-    #     msms = so.sort_spectra(msms)
+    msms_frag = truncate_spectrum(msms, pmz-1.6)
+    if isinstance(msms_frag, float):
+        return 0
+    mass, intensity = break_spectra(msms_frag)
+    return np.sum(intensity)
+def truncate_spectrum(msms, max_mz):
+    if isinstance(msms, float):
+        return np.NAN
     msms = sort_spectrum(msms)
     mass, intensity = break_spectra(msms)
     upper_allowed=np.searchsorted(mass, max_mz,side = 'left')
@@ -95,7 +103,7 @@ def truncate_msms(msms, max_mz):
     if len(mass_frag)>0 and len(intensity_frag)>0:
         return((pack_spectra(mass_frag, intensity_frag)))
     else:
-        return(pack_spectra([],[]))
+        return(np.NAN)
 
 
 def add_spectra(msms1, msms2):
@@ -109,7 +117,7 @@ def add_spectra(msms1, msms2):
     return(msms_mix)
 def bin_spectrum(msms,mass_error = 0.01):
     # normalize spectrum is included already!!!
-    mass, intensity = break_spectra(sort_spectrum((msms)))
+    mass, intensity = break_spectra(sort_spectrum(msms))
     mass_binned = []
     intensity_binned = []
     while len(mass)>0:
@@ -120,8 +128,8 @@ def bin_spectrum(msms,mass_error = 0.01):
         intensity_temp = intensity[idx_start:idx_end]
         mass_binned.append(mass[idx])
         intensity_binned.append(np.sum(intensity_temp))
-        mass = mass[:idx_start]+mass[idx_end:]
-        intensity = intensity[:idx_start]+intensity[idx_end:]
+        mass = np.concatenate((mass[:idx_start], mass[idx_end:]))
+        intensity = np.concatenate((intensity[:idx_start], intensity[idx_end:]))
     msms_binned = sort_spectrum(pack_spectra(mass_binned, intensity_binned))
     return msms_binned
 def clean_spectrum(msms):
@@ -158,7 +166,7 @@ def make_bin(bin_left, tol, if_sorted = True):
     binn =quick_search_values(bin_left, 'mass', bin_left['mass'][max_index]-step, bin_left['mass'][max_index]+step)
     bin_left_return = bin_left.drop(binn.index)
     return(binn, bin_left_return)
-def weighted_average_spectra(data_subset, typeofmsms = 'peaks', mass_error = 0.02, weight_col = 'ms1_precursor_intensity'):
+def weighted_average_spectra(data_subset, typeofmsms = 'peaks', weight_col = 'ms1_precursor_intensity'):
     # if(len(data_subset)<2):
     #     print("you cannot make weighted average spectra using only 1 spectra")
     #     return(np.NAN)
@@ -287,23 +295,34 @@ def guess_charge(adduct):
 
 def standardize_spectra(ms):
     mass, intensity = break_spectra(ms)
-    intensity = [item/max(intensity) for item in intensity]
+    intensity = intensity/np.max(intensity)
+    intensity = np.round(intensity, 4)
     return(pack_spectra(mass, intensity))
     
 def break_spectra(spectra):
-    if spectra == spectra:
-        if len(spectra)!=0:
-            split_msms = re.split('\t|\n',spectra)
-            intensity = split_msms[1:][::2]
-            mass = split_msms[::2]
-            mass = [float(item) for item in mass]
-            intensity = [float(item) for item in intensity]
-            return(mass, intensity)
-    else:
-        return(np.NaN, np.NAN)
+    if isinstance(spectra, float):
+        return ([],[])
+    spectra = np.array(spectra)
+    mass = spectra.T[0]
+    intensity = spectra.T[1]
+    return mass, intensity
 
 def pack_spectra(mass, intensity):
     if len(mass)>0 and len(intensity)>0:
+        return(np.array([[mass[i], intensity[i]] for i in range(0, len(mass))], dtype=np.float32))
+    else:
+        return(np.NAN)
+
+
+def convert_arr_to_string(msms):
+    if isinstance(msms, float):
+        return np.NAN
+    mass = []
+    intensity = []
+    for n in range(0, len(msms)):
+        mass.append(msms[n][0])
+        intensity.append(msms[n][1])
+    if len(mass)>0 and len(intensity)>0 and len(mass)==len(intensity):
         intensity_return = [str(inten) + '\n' for (inten) in (intensity[:-1])]
         intensity_return.append(str(intensity[-1]))
         mass_cali_tab = [str(mas) + '\t' for (mas) in mass]
@@ -314,18 +333,10 @@ def pack_spectra(mass, intensity):
         return(list_temp)
     else:
         return(np.NAN)
-
-
-def convert_nist_to_string(msms):
-    mass = []
-    intensity = []
-    for n in range(0, len(msms)):
-        mass.append(msms[n][0])
-        intensity.append(msms[n][1])
-    return(pack_spectra(mass,intensity))
-
-def convert_msdial_to_string(msdial_msms):
-    return(msdial_msms.replace(' ', '\n').replace(':', '\t'))
+def standardize_msdial(msms):
+    spec_raw = np.array([x.split(':') for x in msms.split(' ')], dtype=np.float32)
+    return spec_raw
+    # return(msdial_msms.replace(' ', '\n').replace(':', '\t'))
 def convert_scc_to_string(msms):
     mass = []
     intensity = []
@@ -337,24 +348,29 @@ def convert_scc_to_string(msms):
     msms_return = pack_spectra(mass, intensity)
     return(msms_return)
 
-def convert_string_to_nist(msms):
+def convert_string_to_arr(msms):
+    if isinstance(msms, float):
+        return np.NAN
     spec_raw = np.array([x.split('\t') for x in msms.split('\n')], dtype=np.float32)
     return(spec_raw)
 
 def spectral_entropy(msms):
-    if msms is np.NAN:
+    if isinstance(msms, float):
         return(-1)
-    return(scipy.stats.entropy(convert_string_to_nist(msms)[:, 1]))
+    mass, intensity = break_spectra(msms)
+    return(scipy.stats.entropy(intensity))
 def normalized_entropy(msms, order = 4):
-    if msms is np.NAN:
-        return(msms)
+    if isinstance(msms, float):
+        return(pack_spectra([],[]))
     npeak = num_peaks(msms)
-    normalized_entropy = (scipy.stats.entropy(convert_string_to_nist(msms)[:, 1])/math.log(npeak))**order
-    if pd.isna(normalized_entropy) == False:
+    mass, intensity = break_spectra(msms)
+    normalized_entropy = (scipy.stats.entropy(intensity)/math.log(npeak))**order
+    if normalized_entropy==normalized_entropy:
         return (normalized_entropy)
     else:
-        return(-1)
-def convert_lcb_to_string(msms):
+        return(np.NAN)
+
+def convert_lcb_to_arr(msms):
     msms_list = msms.split(' ')
     mass = []
     intensity = []
@@ -452,65 +468,78 @@ def convert_lcb_to_string(msms):
 
     # return(((scipy.stats.entropy(convert_string_to_nist(msms)[:, 1]))/math.log(npeak))^order)
 # needs further modification
-def entropy_function(x):
-    return(x*np.log2(x))
-def find_peak_match(mass1, intensity1, mass2, intensity2, frag_ion, mass_error = 0.02):
-    index_start = np.searchsorted(mass1, frag_ion-mass_error,side = 'left')
-    index_end = np.searchsorted(mass1, frag_ion+mass_error,side = 'right')
-    frag_int1 = np.sum(intensity1[index_start:index_end])
-    index_start = np.searchsorted(mass2, frag_ion-mass_error,side = 'left')
-    index_end = np.searchsorted(mass2, frag_ion+mass_error,side = 'right')
-    frag_int2 = np.sum(intensity2[index_start:index_end])
-    return(frag_int1, frag_int2)
-def entropy_identity(msms1, msms2,pmz = None,NIST =False, mass_error = 0.02):
-    msms1 = sort_spectrum(msms1)
-    msms2 = sort_spectrum(msms2)
-    if NIST == True:
-        msms1 = convert_nist_to_string(msms1)
-        msms2 = convert_nist_to_string(msms2)
-    msms1 = bin_spectrum(msms1, mass_error = mass_error)
-    msms2 = bin_spectrum(msms2, mass_error = mass_error)
-    if pmz is not None:
-        msms1 = truncate_msms(msms1, pmz-1.6)
-        msms2 = truncate_msms(msms2, pmz-1.6)
-    if num_peaks(msms1)==0 or num_peaks(msms2)==0:
-        return(np.NAN)
-    msms1 = normalize_spectrum(msms1, total='half')
-    msms2 = normalize_spectrum(msms2, total='half')
 
-    mass1, intensity1 = break_spectra(msms1)
-    mass2, intensity2 = break_spectra(msms2)
-    # print(np.sum(intensity2))
-    # return(mass1, intensity1, mass2, intensity2)
-    if len(mass1)<len(mass2):
-        mass_r = mass1
-    else:
-        mass_r = mass2
-    score = 0
-    for m in mass_r:
-        i1, i2 = find_peak_match(mass1, intensity1, mass2, intensity2, m, mass_error)
-        if i1>0 and i2>0:
-            score = score+entropy_function(i1+i2)-entropy_function(i1)-entropy_function(i2)
-    return (score)
+import ms_entropy as me
+import ast
+def entropy_identity(msms1, msms2,pmz, ms2_error = 0.02):
+    if isinstance(msms1, float) or isinstance(msms2, float):
+        return np.NAN
+    if isinstance(msms1, str):
+        msms1 = ast.literal_eval(msms1)
+    if isinstance(msms2, str):
+        msms2 = ast.literal_eval(msms2)
+    similarity = me.calculate_entropy_similarity(msms1, msms2, ms2_tolerance_in_da = ms2_error, noise_threshold=0.00, clean_spectra=True,max_mz = pmz-1.6)
+    return similarity
 
     # return(se.similarity(convert_string_to_nist(msms1), convert_string_to_nist(msms2), 'entropy',
     #     ms2_da = mass_error, need_clean_spectra = False, need_normalize_result = True))
 
-
-def entropy_legacy(msms1, msms2):
-    return(se.similarity(convert_string_to_nist(msms1), convert_string_to_nist(msms2), 'entropy',
-        ms2_da = 0.05, need_clean_spectra = False, need_normalize_result = True))
-
-def average_entropy_calculation(data_temp, typeofmsms = "msms"):
-    if len(data_temp)==1:
-        # print('you just cannot calculate entropy based on 1 spectrum!!!')
-        return(np.NaN)
+import random
+def generate_noise(pmz, lamda, n = 100):
+    if int(n)!= n:
+        n = np.int64(np.ceil(n))
     else:
-        entropy_temp = []
-        combinations_object =itertools.combinations(data_temp[typeofmsms], 2)
-        for n in combinations_object:
-            entropy_temp.append(se.similarity(convert_string_to_nist(n[0]), convert_string_to_nist(n[1]), 'entropy', ms2_da = 0.02, need_clean_spectra = False, need_normalize_result = True))
-        return(sum(entropy_temp)/len(entropy_temp))
+        n = n
+    # Generate a random variable from a uniform distribution in the range [a, b]
+    mass = [random.uniform(50, pmz) for _ in range(n)]
+
+    # size specifies the number of random variates to generate.
+
+    # Generating Poisson-distributed random variables
+    intensity = np.random.poisson(lam=lamda, size=n)
+    intensity = intensity/100
+    return(pack_spectra(mass, intensity))
+def generate_chemical_noise(pmz, lamda, polarity,formula_db,n = 100):
+    mass_e =  -0.00054858026
+    if polarity =='+':
+        coe = 1
+    elif polarity =='-':
+        coe = -1
+    else:
+        print('cannot determine adduct polarity!')
+        return()
+    if int(n)!= n:
+        n = np.int64(np.ceil(n))
+    else:
+        n = n
+    all_possible_mass = np.array(formula_db['mass'])
+    idx_left, idx_right = all_possible_mass.searchsorted([50,pmz ])
+    all_allowed_mass = all_possible_mass[idx_left:idx_right]
+    if idx_right-idx_left <n:
+        n = idx_right-idx_left
+    # Generate a random variable from a uniform distribution in the range [a, b]
+    mass = np.random.choice(all_allowed_mass, size=n, replace=False)
+    mass = mass+coe*mass_e
+    # mass = [random.uniform(50, pmz) for _ in range(n)]
+
+    # size specifies the number of random variates to generate.
+
+    # Generating Poisson-distributed random variables
+    intensity = np.random.poisson(lam=lamda, size=n)
+    intensity = intensity/100
+    return(pack_spectra(mass, intensity))
+def add_noise(msms1, noise):
+    msms1 = standardize_spectra(msms1)
+    mass1, intensity1= break_spectra(msms1)
+    mass2, intensity2 = break_spectra(noise)
+    mass = np.concatenate((mass1, mass2))
+    intensity = np.concatenate((intensity1, intensity2))
+    msms = pack_spectra(mass, intensity)
+    # msms = bin_spectrum(msms)
+    return msms
+
+
+
 
 
 # def duplicate_handling(data, typeofmsms='msms_recalibrated',mass_error = 0.01, ifppm = False, ifnormalize = True, method = 'weighedaverage'):
@@ -615,10 +644,13 @@ def normalize_spectrum(msms, total = 'unit'):
     # intensity_rel = [round(number, 8) for number in intensity_rel]
     return(pack_spectra(mass, intensity_rel))
 def cut_msms(msms, mz_lower, mz_upper):
+    if isinstance(msms, float):
+        return np.NAN
     mass_temp, intensity_temp = break_spectra(msms)
-    if mass_temp == mass_temp:
-        index_start = np.searchsorted(mass_temp, mz_lower,side = 'left')
-        index_end = np.searchsorted(mass_temp, mz_upper,side = 'right')
+    search_array=np.array(mass_temp)
+
+    if mass_temp.all() == mass_temp.all():
+        index_start, index_end = search_array.searchsorted([mz_lower, mz_upper])
         mass_return = mass_temp[index_start:index_end]
         intensity_return = intensity_temp[index_start:index_end]
         return(pack_spectra(mass_return, intensity_return))
@@ -659,7 +691,7 @@ def _extract_ms1_mass(peaks, mz_lower, mz_upper):
 
 
 def get_top_n(peaks, n, pmz):
-    peaks = truncate_msms(peaks, pmz -1.6)
+    peaks = truncate_spectrum(peaks, pmz -1.6)
     if num_peaks(peaks)<n:
         return(np.NAN)
     mass, intensity = break_spectra(peaks)
