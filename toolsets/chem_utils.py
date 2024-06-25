@@ -16,31 +16,6 @@ from rdkit.Chem import rdFMCS
 
 import requests
 
-def chat_with_gpt(prompt, api_key='sk-proj-rsQV7W5LbkGCDkvum0V3T3BlbkFJMJ1J3jIi9TPBBgZoagqe'):
-    # URL for the OpenAI API
-    url = "https://api.openai.com/v1/chat/completions"
-
-    # Headers including the authorization with your API key
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
-
-    # Data payload with your prompt and other parameters
-    data = {
-        "model": "gpt-4",  # or another model version like "gpt-3.5-turbo"
-        "messages": [{"role": "user", "content": prompt}]
-    }
-
-    # Make a POST request to the OpenAI API
-    response = requests.post(url, json=data, headers=headers)
-
-    # Check if the request was successful
-    if response.status_code == 200:
-        return response.json()['choices'][0]['message']['content']
-    else:
-        # Handle errors (you might want to improve error handling)
-        return f"Error: {response.status_code} - {response.text}"
 
 def __remove_bonds_in_smarts(mol, smarts):
     removed_bond_number = 0
