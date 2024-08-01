@@ -39,6 +39,8 @@ def entropy_denoising_alt(msms, threshold = 0.01):
             intensity_confirmed.append(i)
     return(so.pack_spectra(mass_confirmed, intensity_confirmed))
 def entropy_denoising(msms):
+    if isinstance(msms, float):
+        return(np.NAN)
     msms_std = so.standardize_spectra(msms)
     mass_raw, intensity_raw = so.break_spectra(msms)
     mass, intensity = so.break_spectra(msms_std)
@@ -126,6 +128,8 @@ def threshold_denoising(msms, threshold = 1):
     intensity = intensity[to_keep]
     return(so.pack_spectra(mass, intensity))
 def spectral_denoising(msms, smiles, adduct,max_allowed_deviation = 0.005):
+    if isinstance(msms, float):
+        return np.NAN
     msms_d1 = entropy_denoising(msms)
     if isinstance(msms_d1, float):
         return np.NAN
