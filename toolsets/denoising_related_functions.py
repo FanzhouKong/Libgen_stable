@@ -56,8 +56,8 @@ def entropy_denoising(msms):
         mass_temp = mass[idx_left:]
         intensity_temp = intensity[idx_left:]
         intensity_raw_temp = intensity_raw[idx_left:]
-        nS = so.normalized_entropy(so.pack_spectra(mass_temp, intensity_temp))
-        if len(mass_temp)<=3 or nS<=0.8:
+        # nS = so.normalized_entropy(so.pack_spectra(mass_temp, intensity_temp))
+        if len(mass_temp)<=3:
             mass_confirmed =  np.concatenate((mass_confirmed, mass_temp))
             intensity_confirmed = np.concatenate((intensity_confirmed,intensity_temp))
             intensity_raw_confirmed = np.concatenate((intensity_raw_confirmed, intensity_raw_temp))

@@ -1,4 +1,3 @@
-import os
 from itertools import chain
 import toolsets.raw_data_scaffold as rds
 import toolsets.T_rex as trx
@@ -24,12 +23,10 @@ def libgen_function(std_list, mzml_dir, if_QE = True):
         masses = np.array(list(chain.from_iterable(masses)))
         keep = masses>50
         masses = masses[keep]
-        if os.path.exists(os.path.join(mzml_dir, mix+'.mzML')) or os.path.exists(os.path.join(mzml_dir, mix+'.mzml')):
-            feature_targeted = find_feature_targeted(masses=masses, mix=mix, mzml_dir=mzml_dir,mass_error = 0.005, if_QE= if_QE)
+        feature_targeted = find_feature_targeted(masses=masses, mix=mix, mzml_dir=mzml_dir,mass_error = 0.005, if_QE= if_QE)
 
-            matched = feature_matching(feature_targeted, std_list_mix, adducts, mass_error = mass_error)
-            matched_all = pd.concat([matched_all, matched], ignore_index=True)
-
+        matched = feature_matching(feature_targeted, std_list_mix, adducts, mass_error = mass_error)
+        matched_all = pd.concat([matched_all, matched], ignore_index=True)
     msms_denoised = []
     eis = []
     msms_raw = []
@@ -57,18 +54,13 @@ def libgen_function(std_list, mzml_dir, if_QE = True):
             msms_denoised.append(msms_d1)
             msms_raw.append(row['msms'])
             eis.append(ei1)
-    # return matched_all
-    if len(matched_all)>0:
-        matched_all.drop(columns=['msms', 'msms_pmz',
-                                  'msms_pmz_intensity', 'msms_idx', 'rt_offset', 'msms_mf', 'msms_mf_pmz',
-                                  'msms_mf_pmz_intensity', 'rt_offset_mf'], inplace=True)
-        matched_all['msms_raw']=msms_raw
-        matched_all['msms_denoised']=msms_denoised
-        matched_all['eis']=eis
-        return matched_all,matched_all_predenoising
-    else:
-        print('no matches were made!')
-        return(np.NAN, np.NAN)
+    matched_all.drop(columns=['msms', 'msms_pmz',
+                              'msms_pmz_intensity', 'msms_idx', 'rt_offset', 'msms_mf', 'msms_mf_pmz',
+                              'msms_mf_pmz_intensity', 'rt_offset_mf'], inplace=True)
+    matched_all['msms_raw']=msms_raw
+    matched_all['msms_denoised']=msms_denoised
+    matched_all['eis']=eis
+    return matched_all,matched_all_predenoising
 
 
 
@@ -145,7 +137,7 @@ def feature_matching(feature_targeted, std_list_mix, adducts, mass_error = 0.001
                 adduct_matched.insert(4, 'reference_smiles', row['smiles'])
                 adduct_matched.insert(5, 'reference_formula', row['formula'])
                 adduct_matched.insert(6, 'reference_mix', row['mix'])
-                adduct_matched.insert(7, 'reference_rt', row['rt_reference'])
+                adduct_matched.insert(7, 'reference_rt', row['reference_rt'])
                 compound_matched  = pd.concat([compound_matched, adduct_matched], ignore_index=True)
         if len(compound_matched)>0:
             if return_raw == False:
